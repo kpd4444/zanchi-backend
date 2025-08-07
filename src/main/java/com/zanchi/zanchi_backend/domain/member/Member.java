@@ -7,17 +7,16 @@ import lombok.*;
 
 @Entity
 @Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED) // JPA 프록시용
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-
 public class Member {
     @Id @GeneratedValue
     private Long id;
 
     private String name;
 
-    private String email;
+    private String loginId;
 
     private String password;
 }

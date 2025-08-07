@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>회원가입 테스트</title>
+</head>
+<body>
+<h2>회원가입</h2>
+<form id="signupForm">
+    <label for="name">이름:</label>
+    <input type="text" id="name" name="name"><br><br>
+
+    <label for="loginId">아이디:</label>
+    <input type="text" id="loginId" name="loginId"><br><br>
+
+    <label for="password">비밀번호:</label>
+    <input type="password" id="password" name="password"><br><br>
+
+    <button type="submit">회원가입</button>
+</form>
+
+<p id="result"></p>
+
+<script>
+    const form = document.getElementById("signupForm");
+    const result = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const data = {
+            name: form.name.value,
+            loginId: form.loginId.value,
+            password: form.password.value
+        };
+
+        try {
+            const response = await fetch("/api/signup", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            });
+
+            const resultData = await response.json();
+            result.textContent = resultData.message;
+            result.style.color = response.ok ? "green" : "red";
+        } catch (err) {
+            result.textContent = "오류가 발생했습니다.";
+            result.style.color = "red";
+        }
+    });
+</script>
+</body>
+</html>
