@@ -3,6 +3,8 @@ package com.zanchi.zanchi_backend.config.jwt;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -48,5 +50,36 @@ public class JwtTokenProvider {
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
+    }
+
+    public String extractAccessTokenFromCookie(HttpServletRequest request) {
+
+        // 운영에서는 Authorization 헤더 제거 권장
+
+        // 1. Authorization 헤더 검사 (테스트용)
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+
+        // 2. accessToken 쿠키 검사 (실제 운영용)
+        if (request.getCookies() != null) {
+            for (Cookie cookie : request.getCookies()) {
+                if (cookie.getName().equals("accessToken")) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public long getRemainingTime(String token) {
+        return Jwts.parser()
+                .setSigningKey(secretKey)
+                .parseClaimsJws(token)
+                .getBody()
+                .getExpiration()
+                .getTime() - System.currentTimeMillis();
     }
 }

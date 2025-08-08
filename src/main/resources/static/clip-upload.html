@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clip Upload Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 20px; }
+    .row { margin: 12px 0; }
+    label { display:block; font-weight: 600; margin-bottom: 6px; }
+    input[type="text"] { width: 100%; padding: 8px; }
+    input[type="file"] { padding: 8px 0; }
+    button { padding: 10px 14px; cursor: pointer; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+    pre { background: #111; color: #0f0; padding: 12px; overflow: auto; min-height: 120px; }
+    small.muted { color: #777; }
+    video { max-width: 100%; display: none; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<h1>클립 업로드 테스트</h1>
+
+<div class="row">
+  <label>서버 베이스 URL <small class="muted">(비워두면 현재 호스트 사용)</small></label>
+  <input id="baseUrl" type="text" placeholder="예) http://localhost:8080">
+</div>
+
+<div class="row">
+  <label>JWT 토큰 <small class="muted">(앞에 <b>Bearer</b> 쓰지 말고 토큰 문자열만!)</small></label>
+  <input id="token" type="text" placeholder="eyJhbGciOi...">
+</div>
+
+<div class="row">
+  <label>캡션</label>
+  <input id="caption" type="text" placeholder="예) 첫 업로드 테스트">
+</div>
+
+<div class="row">
+  <label>동영상 파일</label>
+  <input id="video" type="file" accept="video/*">
+  <video id="preview" controls></video>
+</div>
+
+<div class="actions">
+  <button id="btnUpload">/api/clips 업로드</button>
+  <button id="btnWhoami">/api/auth/whoami 확인</button>
+</div>
+
+<pre id="out">여기에 응답이 출력됩니다…</pre>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const out = $("out");
+  const video = $("video");
+  const preview = $("preview");
+
+  $("video").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (f) {
+      const url = URL.createObjectURL(f);
+      preview.src = url;
+      preview.style.display = "block";
+    } else {
+      preview.removeAttribute("src");
+      preview.style.display = "none";
+    }
+  });
+
+  function toUrl(path) {
+    const base = $("baseUrl").value.trim();
+    if (!base) return path;
+    return base.replace(/\/+$/, "") + path;
+  }
+
+  function authHeader() {
+    const t = $("token").value.trim();
+    if (!t) throw new Error("JWT 토큰을 입력하세요.");
+    return "Bearer " + t; // 🔴 여기서 Bearer 접두사 붙여줌
+  }
+
+  async function callWhoami() {
+    out.textContent = "호출 중...";
+    try {
+      const res = await fetch(toUrl("/api/auth/whoami"), {
+        method: "GET",
+        headers: { "Authorization": authHeader() }
+      });
+      const text = await res.text();
+      out.textContent = `status=${res.status}\n` + pretty(text);
+    } catch (e) {
+      out.textContent = "에러: " + e;
+    }
+  }
+
+  async function uploadClip() {
+    out.textContent = "업로드 중...";
+    try {
+      const file = $("video").files[0];
+      if (!file) { out.textContent = "동영상 파일을 선택하세요."; return; }
+
+      const fd = new FormData();
+      fd.append("caption", $("caption").value);
+      fd.append("video", file);
+
+      const res = await fetch(toUrl("/api/clips"), {
+        method: "POST",
+        headers: { "Authorization": authHeader() },
+        body: fd
+      });
+
+      const text = await res.text();
+      out.textContent = `status=${res.status}\n` + pretty(text);
+    } catch (e) {
+      out.textContent = "에러: " + e;
+    }
+  }
+
+  function pretty(text) {
+    try { return JSON.stringify(JSON.parse(text), null, 2); }
+    catch { return text; }
+  }
+
+  $("btnUpload").addEventListener("click", uploadClip);
+  $("btnWhoami").addEventListener("click", callWhoami);
+</script>
+</body>
+</html>

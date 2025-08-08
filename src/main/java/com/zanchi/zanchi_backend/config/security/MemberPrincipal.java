@@ -4,9 +4,11 @@ import com.zanchi.zanchi_backend.domain.member.Member;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 @Getter
 @Setter
@@ -18,14 +20,25 @@ public class MemberPrincipal implements UserDetails {
         this.member = member;
     }
 
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        return Collections.emptyList(); // 또는 ROLE 추가
-    }
 
     @Override
     public String getPassword() {
         return member.getPassword();
+    }
+
+    public Long getId() {
+        return member.getId();
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        String r = member.getRole();
+        if (r == null || r.isBlank()) {
+            // 기본 권한 부여 (원하면 USER 대신 원하는 기본값으로)
+            return List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        }
+        String roleName = r.startsWith("ROLE_") ? r : "ROLE_" + r;
+        return List.of(new SimpleGrantedAuthority(roleName));
     }
 
     @Override
