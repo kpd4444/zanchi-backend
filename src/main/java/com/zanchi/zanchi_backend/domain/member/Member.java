@@ -19,4 +19,7 @@ public class Member {
     private String loginId;
 
     private String password;
+
+    // Spring Security와 JWT 인증 필터를 구현할 때 권한 정보가 필요하기 때문에 추가
+    private String role;
 }
