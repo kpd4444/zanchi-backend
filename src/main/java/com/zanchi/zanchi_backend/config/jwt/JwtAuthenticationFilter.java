@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -13,7 +14,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-
+@Slf4j
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -25,6 +26,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain)
             throws ServletException, IOException {
+
+
+
 
         String token = resolveToken(request);
 
@@ -41,6 +45,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         }
+
+        //----------------------------
+        log.info("AuthH={}", request.getHeader("Authorization"));
+        //String token = resolveToken(request);
+        log.info("Token={}", token);
+
+        if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
+            String loginId = jwtTokenProvider.getLoginIdFromToken(token);
+            log.info("JWT OK loginId={}", loginId);
+
+        } else {
+            log.warn("JWT invalid or missing");
+        }
+        //------------------
+
 
         filterChain.doFilter(request, response);
     }

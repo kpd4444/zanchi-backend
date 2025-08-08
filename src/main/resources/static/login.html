@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>로그인 테스트</title>
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 640px; margin: 40px auto; }
+        label { display:block; margin: 12px 0 4px; }
+        input { width: 100%; padding: 10px; box-sizing: border-box; }
+        button { margin-top: 14px; padding: 10px 14px; cursor: pointer; }
+        .ok { color: #0a7d33; }
+        .fail { color: #c11414; }
+        pre { background: #f6f6f6; padding: 10px; overflow: auto; }
+    </style>
+</head>
+<body>
+<h2>로그인 테스트</h2>
+
+<label for="loginId">아이디</label>
+<input id="loginId" type="text" placeholder="예: kpd4444" />
+
+<label for="password">비밀번호</label>
+<input id="password" type="password" placeholder="비밀번호" />
+
+<button id="btnLogin">로그인</button>
+
+<p id="status"></p>
+
+<h3>발급받은 토큰</h3>
+<pre id="tokenBox">(아직 없음)</pre>
+
+<h3>보호 API 호출 테스트</h3>
+<button id="btnCall">/api/members 호출</button>
+<pre id="apiResult"></pre>
+
+<script>
+    const $ = (sel) => document.querySelector(sel);
+
+    // 저장된 토큰 있으면 표시
+    const saved = localStorage.getItem('accessToken');
+    if (saved) $('#tokenBox').textContent = saved;
+
+    $('#btnLogin').addEventListener('click', async () => {
+        const loginId = $('#loginId').value.trim();
+        const password = $('#password').value;
+
+        $('#status').textContent = '요청 중...';
+
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loginId, password })
+            });
+
+            const text = await res.text(); // 컨트롤러가 문자열 바디를 리턴하므로 text로 받음
+            const authHeader = res.headers.get('Authorization'); // "Bearer xxxxx"
+
+            if (res.ok && authHeader && authHeader.startsWith('Bearer ')) {
+                const token = authHeader.substring(7);
+                localStorage.setItem('accessToken', token);
+                $('#tokenBox').textContent = token;
+                $('#status').className = 'ok';
+                $('#status').textContent = `성공 (${res.status}) - ${text}`;
+            } else {
+                $('#status').className = 'fail';
+                $('#status').textContent = `실패 (${res.status}) - ${text}`;
+            }
+        } catch (e) {
+            $('#status').className = 'fail';
+            $('#status').textContent = '요청 실패: ' + e.message;
+        }
+    });
+
+    // 보호된 API 예시 호출 (/api/members를 예로 듦. 실제 존재하는 엔드포인트로 바꿔도 됨)
+    $('#btnCall').addEventListener('click', async () => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            alert('먼저 로그인해서 토큰을 발급받으세요.');
+            return;
+        }
+        $('#apiResult').textContent = '호출 중...';
+
+        try {
+            const res = await fetch('/api/members', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const text = await res.text();
+            $('#apiResult').textContent = `status: ${res.status}\n\n` + text;
+        } catch (e) {
+            $('#apiResult').textContent = '요청 실패: ' + e.message;
+        }
+    });
+</script>
+</body>
+</html>

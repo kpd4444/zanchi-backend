@@ -1,27 +1,35 @@
 package com.zanchi.zanchi_backend.domain.member;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
+@Table(
+        name = "member",
+        indexes = @Index(name = "idx_member_login_id", columnList = "loginId", unique = true)
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
 public class Member {
-    @Id @GeneratedValue
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // MariaDB/H2 호환 안전
     private Long id;
 
+    @Column(nullable = false)
     private String name;
 
+    @Column(nullable = false, length = 30, unique = true) // 로그인 중복 방지 & 빠른 조회
     private String loginId;
 
+    @Column(nullable = false, length = 60)// BCrypt 길이 고려
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
-    // Spring Security와 JWT 인증 필터를 구현할 때 권한 정보가 필요하기 때문에 추가
-    private String role;
-
-
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private String role = "ROLE_USER"; // MemberPrincipal의 권한 매핑에 필요
 }

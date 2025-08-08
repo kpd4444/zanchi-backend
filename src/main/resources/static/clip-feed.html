@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>인스타 스타일 피드 테스트</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#000; color:#fff; }
+        header { position: sticky; top:0; background:#111; padding:10px 14px; z-index:10; display:flex; gap:10px; align-items:center; }
+        header input { padding:8px 10px; border-radius:8px; border:1px solid #333; background:#000; color:#eee; }
+        header button { padding:8px 12px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#eee; cursor:pointer; }
+        .feed { display:flex; flex-direction:column; gap:16px; padding:16px 0 80px; }
+        .card { position: relative; width:min(600px, 100vw); margin:0 auto; }
+        video { width:100%; height:auto; max-height:90vh; background:#000; border-radius:12px; }
+        .overlay { position:absolute; left:12px; bottom:12px; right:12px; display:flex; justify-content:space-between; align-items:flex-end; pointer-events:none; }
+        .meta { font-size:14px; color:#ddd; text-shadow:0 1px 2px rgba(0,0,0,.6); }
+        .pill { pointer-events:auto; background:rgba(0,0,0,.5); border:1px solid #444; border-radius:20px; padding:6px 10px; font-size:12px; }
+        .centerHint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.35); padding:6px 10px; border-radius:8px; font-size:12px; opacity:0; transition:.2s; }
+        .show { opacity:1; }
+        #status, #error { position:fixed; left:10px; bottom:10px; font-size:12px; }
+        #error { color:#f66; bottom:26px; }
+        .sentinel { height: 1px; }
+    </style>
+</head>
+<body>
+<header>
+    <span>API:</span>
+    <input id="baseUrl" value="http://localhost:8080" />
+    <span>토큰(옵션):</span>
+    <input id="token" style="width:420px" placeholder="Bearer 쓰지 말고 순수 토큰만" />
+    <button id="remember">기억</button>
+    <button id="forget">지움</button>
+    <button id="reload">새로고침</button>
+</header>
+
+<main class="feed" id="feed"></main>
+<div class="sentinel" id="sentinel"></div>
+
+<div id="error"></div>
+<div id="status" style="color:#9f9">준비됨</div>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+
+    // --- boot: 토큰 복원
+    (() => {
+        const t = localStorage.getItem('jwt') || '';
+        if (t) $('token').value = t;
+    })();
+
+    $('remember').onclick = () => localStorage.setItem('jwt', $('token').value.trim());
+    $('forget').onclick = () => { localStorage.removeItem('jwt'); $('token').value=''; };
+    $('reload').onclick = () => { reset(); loadMore(); };
+
+    // 페이징 상태
+    let page = 0, size = 5, totalPages = Infinity, loading = false;
+
+    function reset() {
+        page = 0; totalPages = Infinity; loading = false;
+        $('feed').innerHTML = '';
+    }
+
+    async function loadMore() {
+        if (loading || page >= totalPages) return;
+        loading = true;
+        $('status').textContent = `불러오는 중... (page=${page})`;
+
+        const base = $('baseUrl').value.trim().replace(/\/+$/,'');
+        const url = `${base}/api/clips/feed?page=${page}&size=${size}`;
+        const headers = { 'Accept':'application/json' };
+        const token = ($('token').value.trim() || localStorage.getItem('jwt') || '');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        try {
+            const res = await fetch(url, { headers });
+            const text = await res.text();
+            if (!res.ok) throw new Error(`HTTP ${res.status}\n${text}`);
+            const data = JSON.parse(text);
+
+            totalPages = data.totalPages ?? 0;
+            page = (data.number ?? 0) + 1;
+
+            (data.content || []).forEach(addCard);
+
+            $('status').textContent = `로드 완료 · ${page}/${Math.max(totalPages,1)} 페이지`;
+            if (page >= totalPages) $('status').textContent += ' · 끝';
+        } catch(e) {
+            $('error').textContent = e.message || String(e);
+        } finally {
+            loading = false;
+        }
+    }
+
+    function addCard(clip) {
+        const base = $('baseUrl').value.trim().replace(/\/+$/,'');
+        const src = clip.videoUrl?.startsWith('http') ? clip.videoUrl : `${base}${clip.videoUrl}`;
+
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        const v = document.createElement('video');
+        v.src = src;
+        v.muted = true;          // 모바일 자동재생을 위해 기본 무음
+        v.loop = true;
+        v.playsInline = true;    // iOS 전체화면 강제 방지
+        v.setAttribute('playsinline', 'true'); // 일부 브라우저 호환
+        v.preload = 'metadata';  // 네트워크 아끼기
+
+        const overlay = document.createElement('div');
+        overlay.className = 'overlay';
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = `${clip.caption ?? '(무제)'} • ${clip.uploader?.name ?? clip.uploader?.loginId ?? '알수없음'} • ♥ ${clip.likeCount ?? 0}`;
+
+        const btn = document.createElement('button');
+        btn.className = 'pill';
+        btn.textContent = '🔇'; // 클릭 시 음소거 토글
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            v.muted = !v.muted;
+            btn.textContent = v.muted ? '🔇' : '🔊';
+        };
+
+        const hint = document.createElement('div');
+        hint.className = 'centerHint';
+        hint.textContent = '탭으로 재생/일시정지';
+
+        card.onclick = () => {
+            if (v.paused) v.play(); else v.pause();
+            hint.classList.add('show');
+            setTimeout(()=>hint.classList.remove('show'), 500);
+        };
+
+        overlay.appendChild(meta);
+        overlay.appendChild(btn);
+        card.appendChild(v);
+        card.appendChild(overlay);
+        card.appendChild(hint);
+
+        $('feed').appendChild(card);
+
+        // 화면에 보일 때만 재생: IntersectionObserver
+        io.observe(v);
+    }
+
+    // 가시성 기반 자동 재생/일시정지
+    const io = new IntersectionObserver((entries) => {
+        entries.forEach(async (e) => {
+            const v = e.target;
+            if (e.isIntersecting && e.intersectionRatio >= 0.6) {
+                try { await v.play(); } catch(_) {}
+            } else {
+                v.pause();
+            }
+        });
+    }, { threshold: [0, 0.6, 1] });
+
+    // 무한 스크롤: sentinel이 보이면 다음 페이지 로드
+    const bottomIO = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting)) loadMore();
+    });
+    bottomIO.observe($('sentinel'));
+
+    // 초기 로드
+    loadMore();
+</script>
+</body>
+</html>
