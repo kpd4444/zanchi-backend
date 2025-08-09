@@ -5,6 +5,7 @@ import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.Value;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -13,6 +14,7 @@ import java.util.Date;
 @Component
 public class JwtTokenProvider {
 
+    // @Value("${jwt.secret}") 나중에 배포할 때는 시크릿 키를 yml 파일에서 고정시키는 것이 좋다
     private Key secretKey;
 
     @PostConstruct

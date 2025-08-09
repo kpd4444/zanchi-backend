@@ -9,6 +9,7 @@ import lombok.*;
         name = "member",
         indexes = @Index(name = "idx_member_login_id", columnList = "loginId", unique = true)
 )
+
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
@@ -31,5 +32,14 @@ public class Member {
 
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private String role = "ROLE_USER"; // MemberPrincipal의 권한 매핑에 필요
+    private String role = "ROLE_USER"; // MemberPrincipal 권한 매핑에 필요
+
+    // 선호도 조사 entity 추가
+    @Getter
+    @Column(name = "preference_survey_completed", nullable = false)
+    private boolean preferenceSurveyCompleted;
+
+    public void markPreferenceSurveyCompleted() {
+        this.preferenceSurveyCompleted = true;
+    }
 }

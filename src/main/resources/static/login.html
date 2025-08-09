@@ -34,12 +34,14 @@
 <pre id="apiResult"></pre>
 
 <script>
+  const API_BASE = 'http://127.0.0.1:8080'; // 백엔드 서버 주소
   const $ = (sel) => document.querySelector(sel);
 
   // 저장된 토큰 있으면 표시
   const saved = localStorage.getItem('accessToken');
   if (saved) $('#tokenBox').textContent = saved;
 
+  // 로그인 버튼 클릭
   $('#btnLogin').addEventListener('click', async () => {
     const loginId = $('#loginId').value.trim();
     const password = $('#password').value;
@@ -47,13 +49,14 @@
     $('#status').textContent = '요청 중...';
 
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // ✅ 쿠키도 함께 받기
         body: JSON.stringify({ loginId, password })
       });
 
-      const text = await res.text(); // 컨트롤러가 문자열 바디를 리턴하므로 text로 받음
+      const text = await res.text();
       const authHeader = res.headers.get('Authorization'); // "Bearer xxxxx"
 
       if (res.ok && authHeader && authHeader.startsWith('Bearer ')) {
@@ -72,19 +75,18 @@
     }
   });
 
-  // 보호된 API 예시 호출 (/api/members를 예로 듦. 실제 존재하는 엔드포인트로 바꿔도 됨)
+  // 보호된 API 호출 버튼 클릭
   $('#btnCall').addEventListener('click', async () => {
     const token = localStorage.getItem('accessToken');
-    if (!token) {
-      alert('먼저 로그인해서 토큰을 발급받으세요.');
-      return;
-    }
     $('#apiResult').textContent = '호출 중...';
 
     try {
-      const res = await fetch('/api/members', {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch(`${API_BASE}/api/members`, {
+        method: 'GET',
+        credentials: 'include', // ✅ 쿠키 기반 요청도 지원
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
+
       const text = await res.text();
       $('#apiResult').textContent = `status: ${res.status}\n\n` + text;
     } catch (e) {
