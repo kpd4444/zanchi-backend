@@ -1,5 +1,6 @@
 package com.zanchi.zanchi_backend.domain.clip;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import jakarta.persistence.*;
 import lombok.*;
@@ -20,7 +21,9 @@ public class ClipComment {
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "clip_id")
     private Clip clip;
 
-    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "member_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "member_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer","handler","password"})
     private Member member;
 
     @Column(nullable = false, length = 500)

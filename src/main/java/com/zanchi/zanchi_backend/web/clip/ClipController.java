@@ -80,7 +80,7 @@ public class ClipController {
         return clipService.addComment(clipId, principal.getId(), req.content());
     }
 
-    @GetMapping("/api/auth/whoami")
+    @GetMapping("/auth/whoami")
     public Map<String, Object> whoami(@AuthenticationPrincipal com.zanchi.zanchi_backend.config.security.MemberPrincipal p) {
         if (p == null) return Map.of("auth", false);
         return Map.of(

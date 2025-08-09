@@ -3,6 +3,7 @@ package com.zanchi.zanchi_backend.domain.clip.service;
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
 import com.zanchi.zanchi_backend.domain.clip.ClipLike;
+import com.zanchi.zanchi_backend.domain.clip.dto.ClipFeedRes;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
@@ -70,4 +71,6 @@ public class ClipService {
         clip.setCommentCount(commentRepository.countByClipId(clipId));
         return c;
     }
+
+
 }

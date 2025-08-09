@@ -1,5 +1,6 @@
 package com.zanchi.zanchi_backend.domain.clip;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.zanchi.zanchi_backend.domain.comment.Comment;
 import com.zanchi.zanchi_backend.domain.member.Member;
@@ -16,6 +17,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
 public class Clip {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -44,4 +46,8 @@ public class Clip {
 
     @CreationTimestamp
     private LocalDateTime createdAt;
+
+    @OneToMany(mappedBy = "clip", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private List<ClipComment> comments = new ArrayList<>();
 }
