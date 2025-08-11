@@ -3,28 +3,25 @@ package com.zanchi.zanchi_backend.domain.clip;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
-
+@Getter @Setter
+@NoArgsConstructor @AllArgsConstructor @Builder
 @Entity
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-@Table(uniqueConstraints = @UniqueConstraint(columnNames = {"clip_id","member_id"}))
+@Table(name = "clip_likes",
+        uniqueConstraints = @UniqueConstraint(name = "uk_clip_like", columnNames = {"clip_id","member_id"}))
 public class ClipLike {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "clip_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "clip_id")
     private Clip clip;
 
-    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "member_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "member_id")
     private Member member;
 
-    @CreationTimestamp
-    private LocalDateTime createdAt;
+    @Override public boolean equals(Object o){ return (this==o) || (o instanceof ClipLike c && id!=null && id.equals(c.id));}
+    @Override public int hashCode(){ return 31; }
 }

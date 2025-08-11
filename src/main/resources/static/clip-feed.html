@@ -106,7 +106,6 @@
         }
         return fallback;
     }
-
     function likeCountOf(c){ return c.likeCount ?? (Array.isArray(c.likes) ? c.likes.length : 0); }
     function commentCountOf(c){ return c.commentCount ?? (Array.isArray(c.comments) ? c.comments.length : 0); }
 
@@ -130,7 +129,7 @@
         } catch {}
         finally {
             membersLoaded = true;
-            refreshAuthorNames(); // 캐시 채우고 화면 반영
+            refreshAuthorNames();
         }
     }
 
@@ -185,7 +184,7 @@
             const moreBtn = document.getElementById('loadMore');
             if (state.page + 1 < state.totalPages) moreBtn.classList.remove('hidden');
             else moreBtn.classList.add('hidden');
-            refreshAuthorNames(); // 한번 더 보정
+            refreshAuthorNames();
         } catch (e) {
             toast('피드 불러오기 실패');
             console.error(e);
@@ -209,7 +208,7 @@
         const card = document.createElement('article');
         card.className = 'card';
         card.dataset.clipId = c.id;
-        card._clip = c; // 원본 보관(작성자 갱신용)
+        card._clip = c;
 
         const meta = document.createElement('div');
         meta.className = 'meta';
@@ -219,10 +218,8 @@
 
         const name = document.createElement('div');
         name.className = 'name';
-        // 1) 즉시 가능한 값
         const direct = resolveName(c, null);
         name.textContent = direct ?? (clipAuthorFromCache(c) ?? '작성자');
-        // 2) 멤버 캐시가 늦게 오면 이후에 갱신
         ensureMembersLoaded();
 
         const time = document.createElement('div');
@@ -334,14 +331,14 @@
             const list = pick(d);
             const found = list.find(x => String(x.id) === String(clipId));
             if (!found) return;
-            cardEl._clip = found; // 최신 데이터로 교체
+            cardEl._clip = found;
             const counts = cardEl.querySelector('.counts');
             const likes = likeCountOf(found);
             const comments = commentCountOf(found);
             counts.dataset.likes = likes;
             counts.dataset.comments = comments;
             counts.textContent = `좋아요 ${likes} · 댓글 ${comments}`;
-            refreshAuthorNames(); // 이름도 함께 갱신
+            refreshAuthorNames();
         } catch {}
     }
 
@@ -353,6 +350,7 @@
         counts.textContent = `좋아요 ${likes} · 댓글 ${cur}`;
     }
 
+    // ========== COMMENTS & REPLIES ==========
     async function loadComments(clipId) {
         try {
             const data = await getJson(`/api/clips/${clipId}/comments`);
@@ -367,26 +365,152 @@
         const box = document.getElementById(`comment-list-${clipId}`);
         if (!box) return;
         const frag = document.createDocumentFragment();
+
         arr.forEach(c => {
             const item = document.createElement('div');
             item.className = 'comment-item';
+
             const av = document.createElement('div');
             av.className = 'avatar';
+
             const textWrap = document.createElement('div');
+
             const who = document.createElement('div');
             who.className = 'who';
-            who.textContent = resolveName(c, '익명');
+            who.textContent = (c.authorName && c.authorName.trim()) ? c.authorName : resolveName(c, '익명');
+
             const text = document.createElement('div');
             text.className = 'text';
             text.textContent = c.content ?? '';
+
+            // ====== 답글 UI ======
+            const actions = document.createElement('div');
+            actions.style.marginTop = '4px';
+
+            const replyToggle = document.createElement('button');
+            replyToggle.className = 'btn';
+            replyToggle.textContent = '답글';
+            replyToggle.style.padding = '4px 8px';
+            replyToggle.style.fontSize = '12px';
+
+            const replyBox = document.createElement('div');
+            replyBox.style.display = 'none';
+            replyBox.style.marginTop = '6px';
+            replyBox.className = 'comment-new';
+
+            const replyInput = document.createElement('input');
+            replyInput.type = 'text';
+            replyInput.placeholder = '답글을 입력하세요';
+
+            const replySend = document.createElement('button');
+            replySend.className = 'btn';
+            replySend.textContent = '등록';
+
+            replyBox.appendChild(replyInput);
+            replyBox.appendChild(replySend);
+
+            const repliesWrap = document.createElement('div');
+            repliesWrap.id = `replies-${clipId}-${c.id}`;
+            repliesWrap.style.marginTop = '8px';
+            repliesWrap.style.paddingLeft = '24px';
+            repliesWrap.style.borderLeft = '1px solid #2a2a2a';
+            repliesWrap.classList.add('hidden');
+
+            let repliesOpen = false;
+            replyToggle.addEventListener('click', async () => {
+                repliesOpen = !repliesOpen;
+                replyBox.style.display = repliesOpen ? 'flex' : 'none';
+                repliesWrap.classList.toggle('hidden', !repliesOpen);
+                if (repliesOpen) await loadReplies(clipId, c.id);
+            });
+
+            replySend.addEventListener('click', async () => {
+                const txt = replyInput.value.trim();
+                if (!txt) return;
+                try {
+                    await postReply(clipId, c.id, txt);
+                    replyInput.value = '';
+                    await loadReplies(clipId, c.id);
+                } catch (e) {
+                    console.error(e);
+                    toast('답글 등록 실패');
+                }
+            });
+
+            actions.appendChild(replyToggle);
             textWrap.appendChild(who);
             textWrap.appendChild(text);
+            textWrap.appendChild(actions);
+            textWrap.appendChild(replyBox);
+            textWrap.appendChild(repliesWrap);
+
             item.appendChild(av);
             item.appendChild(textWrap);
             frag.appendChild(item);
         });
+
         box.innerHTML = '';
         box.appendChild(frag);
+    }
+
+    async function loadReplies(clipId, commentId, page = 0, size = 20) {
+        try {
+            const data = await getJson(`/api/clips/${clipId}/comments/${commentId}/replies?page=${page}&size=${size}`);
+            const list = Array.isArray(data) ? data : (Array.isArray(data?.content) ? data.content : []);
+            renderReplies(clipId, commentId, list);
+        } catch (e) {
+            console.error(e);
+            toast('답글 불러오기 실패');
+        }
+    }
+
+    function renderReplies(clipId, parentCommentId, arr) {
+        const box = document.getElementById(`replies-${clipId}-${parentCommentId}`);
+        if (!box) return;
+        const frag = document.createDocumentFragment();
+
+        arr.forEach(r => {
+            const row = document.createElement('div');
+            row.className = 'comment-item';
+            row.style.marginTop = '6px';
+
+            const av = document.createElement('div');
+            av.className = 'avatar';
+
+            const wrap = document.createElement('div');
+
+            const who = document.createElement('div');
+            who.className = 'who';
+            who.textContent = (r.authorName && r.authorName.trim()) ? r.authorName : resolveName(r, '익명');
+
+            const txt = document.createElement('div');
+            txt.className = 'text';
+            txt.textContent = r.content ?? '';
+
+            wrap.appendChild(who);
+            wrap.appendChild(txt);
+
+            row.appendChild(av);
+            row.appendChild(wrap);
+            frag.appendChild(row);
+        });
+
+        box.innerHTML = '';
+        box.appendChild(frag);
+    }
+
+    async function postReply(clipId, parentCommentId, content) {
+        // (A) 새 엔드포인트 방식
+        return getJson(`/api/clips/${clipId}/comments/${parentCommentId}/replies`, {
+            method: 'POST',
+            body: JSON.stringify({ content })
+        });
+
+        // (B) 같은 엔드포인트 + parentId 방식이라면 위를 지우고 아래로 교체:
+        // return getJson(`/api/clips/${clipId}/comments`, {
+        //   method: 'POST',
+        //   body: JSON.stringify({ parentId: parentCommentId, content })
+        // });
     }
 
     // ========== BOOT ==========
@@ -395,7 +519,6 @@
         if (state.page + 1 < state.totalPages) { state.page += 1; loadFeed(false); }
     });
 
-    // 멤버 캐시 먼저 로드(배열/페이지 응답 모두 지원) 후 피드 로드
     ensureMembersLoaded().finally(() => loadFeed(true));
 </script>
 </body>

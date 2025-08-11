@@ -3,6 +3,9 @@ package com.zanchi.zanchi_backend.config.jwt;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.Value;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -11,6 +14,7 @@ import java.util.Date;
 @Component
 public class JwtTokenProvider {
 
+    // @Value("${jwt.secret}") 나중에 배포할 때는 시크릿 키를 yml 파일에서 고정시키는 것이 좋다
     private Key secretKey;
 
     @PostConstruct
@@ -48,5 +52,36 @@ public class JwtTokenProvider {
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
+    }
+
+    public String extractAccessTokenFromCookie(HttpServletRequest request) {
+
+        // 운영에서는 Authorization 헤더 제거 권장
+
+        // 1. Authorization 헤더 검사 (테스트용)
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+
+        // 2. accessToken 쿠키 검사 (실제 운영용)
+        if (request.getCookies() != null) {
+            for (Cookie cookie : request.getCookies()) {
+                if (cookie.getName().equals("accessToken")) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public long getRemainingTime(String token) {
+        return Jwts.parser()
+                .setSigningKey(secretKey)
+                .parseClaimsJws(token)
+                .getBody()
+                .getExpiration()
+                .getTime() - System.currentTimeMillis();
     }
 }
