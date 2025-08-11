@@ -12,4 +12,11 @@ public interface ClipCommentRepository extends JpaRepository<ClipComment,Long> {
     long countByClipId(Long clipId);
 
     List<ClipComment> findByClipIdAndParentIsNull(Long clipId);
+
+    Page<ClipComment> findByParentIdOrderByIdAsc(Long parentId, Pageable pageable);
+
+
+
+    // ✅ 최상위만
+    Page<ClipComment> findByClipIdAndParentIsNullOrderByIdAsc(Long clipId, Pageable pageable);
 }

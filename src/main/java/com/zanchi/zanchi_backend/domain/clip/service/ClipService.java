@@ -130,18 +130,40 @@ public class ClipService {
         return saved;
     }
 
-    public ClipComment addReply(Long parentCommentId, Long memberId, String content) {
-        ClipComment parent = commentRepository.findById(parentCommentId).orElseThrow();
+
+    @Transactional
+    public ClipComment addReply(Long clipId, Long parentCommentId, Long memberId, String content) {
+        if (content == null || content.trim().isEmpty()) {
+            throw new IllegalArgumentException("content is required");
+        }
+        ClipComment parent = commentRepository.findById(parentCommentId)
+                .orElseThrow(() -> new IllegalArgumentException("parent comment not found"));
+
+        if (!parent.getClip().getId().equals(clipId)) {
+            throw new IllegalArgumentException("parent comment not in this clip");
+        }
+
+        Clip clip = parent.getClip(); // 같은 클립
         Member author = memberRepository.findById(memberId).orElseThrow();
 
         ClipComment reply = ClipComment.builder()
-                .clip(parent.getClip()) // 같은 영상
-                .author(author)
-                .content(content)
-                .parent(parent)
+                .clip(clip)
+                .author(author)      // ← 필드명 author
+                .parent(parent)      // ← 부모 연결
+                .content(content.trim())
                 .build();
 
-        parent.addReply(reply);
-        return commentRepository.save(reply);
+        ClipComment saved = commentRepository.save(reply);
+
+        // 총 댓글수 갱신(선택)
+        long cnt = commentRepository.countByClipId(clipId);
+        clip.setCommentCount(cnt);
+
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClipComment> getReplies(Long parentCommentId, Pageable pageable) {
+        return commentRepository.findByParentIdOrderByIdAsc(parentCommentId, pageable);
     }
 }

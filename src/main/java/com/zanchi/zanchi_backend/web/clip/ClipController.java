@@ -90,4 +90,31 @@ public class ClipController {
         return ResponseEntity.ok(ClipCommentRes.of(saved));
     }
 
+    // 대댓글 목록
+    @GetMapping("/{clipId}/comments/{commentId}/replies")
+    public ResponseEntity<Page<ClipCommentRes>> replies(
+            @PathVariable Long clipId,
+            @PathVariable Long commentId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        var p = clipService.getReplies(commentId, PageRequest.of(page, size));
+        var list = p.getContent().stream().map(ClipCommentRes::of).toList(); // 기존 DTO 재사용
+        return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
+    }
+
+    // 대댓글 작성
+    @PostMapping("/{clipId}/comments/{commentId}/replies")
+    public ResponseEntity<?> addReply(
+            @PathVariable Long clipId,
+            @PathVariable Long commentId,
+            @AuthenticationPrincipal(expression = "id") Long memberId,
+            @Valid @RequestBody CommentCreateReq req) {
+        if (memberId == null) {
+            return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
+        }
+        var saved = clipService.addReply(clipId, commentId, memberId, req.content());
+        return ResponseEntity.ok(ClipCommentRes.of(saved)); // 기존 응답 DTO 그대로
+    }
+
 }

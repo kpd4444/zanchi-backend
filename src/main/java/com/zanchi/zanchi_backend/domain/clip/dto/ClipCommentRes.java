@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 public record ClipCommentRes(
         Long id,
         Long clipId,
+        Long parentId,
         String content,
         String authorName,
         LocalDateTime createdAt
@@ -20,9 +21,12 @@ public record ClipCommentRes(
         return ClipCommentRes.builder()
                 .id(cc.getId())
                 .clipId(cc.getClip()!=null ? cc.getClip().getId() : null)
+                .parentId(cc.getParent()!=null ? cc.getParent().getId() : null)
                 .content(cc.getContent())
                 .authorName(author)
                 .createdAt(cc.getCreatedAt())
                 .build();
     }
+
+
 }
