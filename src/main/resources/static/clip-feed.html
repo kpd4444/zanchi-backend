@@ -1,170 +1,525 @@
 <!doctype html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8" />
-    <title>인스타 스타일 피드 테스트</title>
+    <meta charset="utf-8" />
+    <title>Clip Feed</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
+        :root { color-scheme: dark light; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#000; color:#fff; }
-        header { position: sticky; top:0; background:#111; padding:10px 14px; z-index:10; display:flex; gap:10px; align-items:center; }
-        header input { padding:8px 10px; border-radius:8px; border:1px solid #333; background:#000; color:#eee; }
-        header button { padding:8px 12px; border-radius:8px; border:1px solid #333; background:#1a1a1a; color:#eee; cursor:pointer; }
-        .feed { display:flex; flex-direction:column; gap:16px; padding:16px 0 80px; }
-        .card { position: relative; width:min(600px, 100vw); margin:0 auto; }
-        video { width:100%; height:auto; max-height:90vh; background:#000; border-radius:12px; }
-        .overlay { position:absolute; left:12px; bottom:12px; right:12px; display:flex; justify-content:space-between; align-items:flex-end; pointer-events:none; }
-        .meta { font-size:14px; color:#ddd; text-shadow:0 1px 2px rgba(0,0,0,.6); }
-        .pill { pointer-events:auto; background:rgba(0,0,0,.5); border:1px solid #444; border-radius:20px; padding:6px 10px; font-size:12px; }
-        .centerHint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.35); padding:6px 10px; border-radius:8px; font-size:12px; opacity:0; transition:.2s; }
-        .show { opacity:1; }
-        #status, #error { position:fixed; left:10px; bottom:10px; font-size:12px; }
-        #error { color:#f66; bottom:26px; }
-        .sentinel { height: 1px; }
+        body { margin:0; font-family:-apple-system, system-ui, Segoe UI, Roboto, "Noto Sans KR", sans-serif; background:#0b0b0b; color:#f2f2f2; }
+        .wrap { max-width:680px; margin:0 auto; padding:16px; }
+        header { position:sticky; top:0; z-index:10; backdrop-filter:saturate(180%) blur(8px); background:rgba(0,0,0,.6); border-bottom:1px solid rgba(255,255,255,.08); }
+        header .bar { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; }
+        .title { font-weight:800; letter-spacing:.3px; }
+        .feed { display:flex; flex-direction:column; gap:18px; padding:16px; }
+        .card { background:#111; border:1px solid #222; border-radius:14px; overflow:hidden; }
+        .card .meta { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid #1b1b1b; }
+        .avatar { width:34px; height:34px; border-radius:50%; background:#333; flex:0 0 auto; }
+        .name { font-weight:700; font-size:14px; }
+        .time { color:#a0a0a0; font-size:12px; }
+        .caption { padding:10px 14px 0 14px; color:#e9e9e9; font-size:14px; line-height:1.45; }
+        .video-box { position:relative; }
+        video { width:100%; display:block; background:#000; max-height:70vh; }
+        .actions { display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid #1b1b1b; }
+        .btn { padding:8px 12px; border:1px solid #2a2a2a; background:#1a1a1a; color:#fff; border-radius:10px; font-size:13px; cursor:pointer; }
+        .btn:disabled { opacity:.5; cursor:not-allowed; }
+        .counts { margin-left:auto; color:#bdbdbd; font-size:12px; }
+        .comments { border-top:1px solid #1b1b1b; padding:10px 14px 14px; display:flex; flex-direction:column; gap:10px; }
+        .comment-list { display:flex; flex-direction:column; gap:8px; max-height:240px; overflow:auto; padding-right:4px; }
+        .comment-item { display:flex; gap:10px; align-items:flex-start; }
+        .comment-item .who { font-weight:700; font-size:12px; }
+        .comment-item .text { font-size:13px; color:#e6e6e6; }
+        .comment-new { display:flex; gap:8px; }
+        .comment-new input { flex:1; padding:10px 12px; border-radius:10px; border:1px solid #2a2a2a; background:#141414; color:#fff; outline:none; }
+        .loadmore { display:block; width:100%; margin:10px 0 24px; }
+        .hidden { display:none !important; }
+        .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 14px; border-radius:10px; border:1px solid #333; z-index:9999; font-size:13px; }
+        @media (prefers-color-scheme: light) {
+            body { background:#f7f7f8; color:#111; }
+            header { background:rgba(255,255,255,.7); border-color:rgba(0,0,0,.06); }
+            .card { background:#fff; border-color:#ececec; }
+            .meta { border-color:#eee; }
+            .actions { border-color:#eee; }
+            .comments { border-color:#eee; }
+            .btn { background:#fafafa; color:#111; border-color:#eaeaea; }
+            .comment-new input { background:#fff; color:#111; border-color:#eaeaea; }
+            .toast { background:#111; }
+        }
     </style>
 </head>
 <body>
 <header>
-    <span>API:</span>
-    <input id="baseUrl" value="http://localhost:8080" />
-    <span>토큰(옵션):</span>
-    <input id="token" style="width:420px" placeholder="Bearer 쓰지 말고 순수 토큰만" />
-    <button id="remember">기억</button>
-    <button id="forget">지움</button>
-    <button id="reload">새로고침</button>
+    <div class="bar wrap">
+        <div class="title">Clip Feed</div>
+        <button id="refreshBtn" class="btn">새로고침</button>
+    </div>
 </header>
 
-<main class="feed" id="feed"></main>
-<div class="sentinel" id="sentinel"></div>
-
-<div id="error"></div>
-<div id="status" style="color:#9f9">준비됨</div>
+<main class="wrap">
+    <section id="feed" class="feed"></section>
+    <button id="loadMore" class="btn loadmore hidden">더 불러오기</button>
+</main>
 
 <script>
-    const $ = (id) => document.getElementById(id);
-
-    // --- boot: 토큰 복원
-    (() => {
-        const t = localStorage.getItem('jwt') || '';
-        if (t) $('token').value = t;
-    })();
-
-    $('remember').onclick = () => localStorage.setItem('jwt', $('token').value.trim());
-    $('forget').onclick = () => { localStorage.removeItem('jwt'); $('token').value=''; };
-    $('reload').onclick = () => { reset(); loadMore(); };
-
-    // 페이징 상태
-    let page = 0, size = 5, totalPages = Infinity, loading = false;
-
-    function reset() {
-        page = 0; totalPages = Infinity; loading = false;
-        $('feed').innerHTML = '';
+    // ========== AUTH ==========
+    function getToken() {
+        const t = localStorage.getItem('token') || localStorage.getItem('jwt');
+        if (!t) return null;
+        return t.startsWith('Bearer ') ? t : `Bearer ${t}`;
     }
 
-    async function loadMore() {
-        if (loading || page >= totalPages) return;
-        loading = true;
-        $('status').textContent = `불러오는 중... (page=${page})`;
+    // ========== STATE / UTILS ==========
+    const state = { page: 0, size: 10, totalPages: null, loading: false };
 
-        const base = $('baseUrl').value.trim().replace(/\/+$/,'');
-        const url = `${base}/api/clips/feed?page=${page}&size=${size}`;
-        const headers = { 'Accept':'application/json' };
-        const token = ($('token').value.trim() || localStorage.getItem('jwt') || '');
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+    function toast(m) {
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.textContent = m;
+        document.body.appendChild(t);
+        setTimeout(()=>t.remove(), 1400);
+    }
 
+    function pick(x) {
+        if (Array.isArray(x)) return x;
+        if (x && Array.isArray(x.content)) return x.content;
+        return [];
+    }
+
+    function pageMeta(x) {
+        if (!x || Array.isArray(x)) return { number: 0, totalPages: 1 };
+        return { number: x.number ?? 0, totalPages: x.totalPages ?? 1 };
+    }
+
+    function read(obj, path) {
+        return path.split('.').reduce((acc, k) => (acc && acc[k] != null ? acc[k] : undefined), obj);
+    }
+    function resolveName(obj, fallback) {
+        const candidates = [
+            'authorName','memberName','username','name','writerName','uploaderName',
+            'createdBy.name','author.name','member.name','user.name','owner.name','creator.name',
+            'loginId','member.loginId','user.loginId','authorLoginId'
+        ];
+        for (const p of candidates) {
+            const v = read(obj, p);
+            if (typeof v === 'string' && v.trim().length > 0) return v.trim();
+        }
+        return fallback;
+    }
+    function likeCountOf(c){ return c.likeCount ?? (Array.isArray(c.likes) ? c.likes.length : 0); }
+    function commentCountOf(c){ return c.commentCount ?? (Array.isArray(c.comments) ? c.comments.length : 0); }
+
+    // ========== MEMBER CACHE (id -> name) ==========
+    const memberNameCache = new Map();
+    let membersLoaded = false;
+
+    async function ensureMembersLoaded() {
+        if (membersLoaded) return;
         try {
-            const res = await fetch(url, { headers });
-            const text = await res.text();
-            if (!res.ok) throw new Error(`HTTP ${res.status}\n${text}`);
-            const data = JSON.parse(text);
-
-            totalPages = data.totalPages ?? 0;
-            page = (data.number ?? 0) + 1;
-
-            (data.content || []).forEach(addCard);
-
-            $('status').textContent = `로드 완료 · ${page}/${Math.max(totalPages,1)} 페이지`;
-            if (page >= totalPages) $('status').textContent += ' · 끝';
-        } catch(e) {
-            $('error').textContent = e.message || String(e);
-        } finally {
-            loading = false;
+            const token = getToken();
+            const res = await fetch('/api/members', { headers: token ? { Authorization: token } : {} });
+            if (!res.ok) return;
+            const data = await res.json();
+            const arr = Array.isArray(data) ? data : (Array.isArray(data?.content) ? data.content : []);
+            for (const m of arr) {
+                const id = m.id ?? m.memberId ?? m.userId;
+                const name = (m.name ?? m.username ?? m.loginId ?? '').toString();
+                if (id != null && name) memberNameCache.set(String(id), name);
+            }
+        } catch {}
+        finally {
+            membersLoaded = true;
+            refreshAuthorNames();
         }
     }
 
-    function addCard(clip) {
-        const base = $('baseUrl').value.trim().replace(/\/+$/,'');
-        const src = clip.videoUrl?.startsWith('http') ? clip.videoUrl : `${base}${clip.videoUrl}`;
+    function clipAuthorFromCache(clip) {
+        const ids = [
+            clip.memberId, clip.authorId, clip.uploaderId, clip.ownerId,
+            read(clip, 'member.id'), read(clip, 'author.id'), read(clip, 'user.id'), read(clip, 'creator.id'),
+        ].filter(v => v != null);
+        for (const id of ids) {
+            const nm = memberNameCache.get(String(id));
+            if (nm) return nm;
+        }
+        return null;
+    }
 
-        const card = document.createElement('div');
+    function refreshAuthorNames() {
+        document.querySelectorAll('.card').forEach(card => {
+            const clip = card._clip;
+            if (!clip) return;
+            const el = card.querySelector('.name');
+            if (!el) return;
+            const direct = resolveName(clip, null);
+            el.textContent = direct ?? (clipAuthorFromCache(clip) ?? '작성자');
+        });
+    }
+
+    // ========== HTTP ==========
+    async function getJson(url, opt = {}) {
+        const headers = opt.headers ? {...opt.headers} : {};
+        if (!headers['Content-Type'] && opt.method && opt.method !== 'GET') headers['Content-Type'] = 'application/json';
+        const token = getToken();
+        if (token) headers['Authorization'] = token;
+        const res = await fetch(url, { ...opt, headers });
+        if (!res.ok) {
+            const txt = await res.text().catch(()=> '');
+            throw new Error(txt || 'request failed');
+        }
+        return res.json();
+    }
+
+    // ========== FEED ==========
+    async function loadFeed(reset = false) {
+        if (state.loading) return;
+        state.loading = true;
+        try {
+            if (reset) { state.page = 0; state.totalPages = null; document.getElementById('feed').innerHTML = ''; }
+            const data = await getJson(`/api/clips/feed?page=${state.page}&size=${state.size}`);
+            const items = pick(data);
+            const meta = pageMeta(data);
+            state.totalPages = meta.totalPages;
+            renderFeed(items, state.page > 0);
+            const moreBtn = document.getElementById('loadMore');
+            if (state.page + 1 < state.totalPages) moreBtn.classList.remove('hidden');
+            else moreBtn.classList.add('hidden');
+            refreshAuthorNames();
+        } catch (e) {
+            toast('피드 불러오기 실패');
+            console.error(e);
+        } finally {
+            state.loading = false;
+        }
+    }
+
+    function renderFeed(clips, append) {
+        const feed = document.getElementById('feed');
+        const frag = document.createDocumentFragment();
+        clips.forEach(c => frag.appendChild(buildClipCard(c)));
+        if (append) feed.appendChild(frag); else { feed.innerHTML = ''; feed.appendChild(frag); }
+    }
+
+    function fmtTime(s) {
+        try { return s ? new Date(s).toLocaleString() : ''; } catch { return ''; }
+    }
+
+    function buildClipCard(c) {
+        const card = document.createElement('article');
         card.className = 'card';
-
-        const v = document.createElement('video');
-        v.src = src;
-        v.muted = true;          // 모바일 자동재생을 위해 기본 무음
-        v.loop = true;
-        v.playsInline = true;    // iOS 전체화면 강제 방지
-        v.setAttribute('playsinline', 'true'); // 일부 브라우저 호환
-        v.preload = 'metadata';  // 네트워크 아끼기
-
-        const overlay = document.createElement('div');
-        overlay.className = 'overlay';
+        card.dataset.clipId = c.id;
+        card._clip = c;
 
         const meta = document.createElement('div');
         meta.className = 'meta';
-        meta.textContent = `${clip.caption ?? '(무제)'} • ${clip.uploader?.name ?? clip.uploader?.loginId ?? '알수없음'} • ♥ ${clip.likeCount ?? 0}`;
+        const av = document.createElement('div');
+        av.className = 'avatar';
+        const whoWrap = document.createElement('div');
 
-        const btn = document.createElement('button');
-        btn.className = 'pill';
-        btn.textContent = '🔇'; // 클릭 시 음소거 토글
-        btn.onclick = (e) => {
-            e.stopPropagation();
-            v.muted = !v.muted;
-            btn.textContent = v.muted ? '🔇' : '🔊';
-        };
+        const name = document.createElement('div');
+        name.className = 'name';
+        const direct = resolveName(c, null);
+        name.textContent = direct ?? (clipAuthorFromCache(c) ?? '작성자');
+        ensureMembersLoaded();
 
-        const hint = document.createElement('div');
-        hint.className = 'centerHint';
-        hint.textContent = '탭으로 재생/일시정지';
+        const time = document.createElement('div');
+        time.className = 'time';
+        time.textContent = fmtTime(c.createdAt);
+        whoWrap.appendChild(name);
+        whoWrap.appendChild(time);
+        meta.appendChild(av);
+        meta.appendChild(whoWrap);
 
-        card.onclick = () => {
-            if (v.paused) v.play(); else v.pause();
-            hint.classList.add('show');
-            setTimeout(()=>hint.classList.remove('show'), 500);
-        };
+        const cap = document.createElement('div');
+        cap.className = 'caption';
+        cap.textContent = c.caption || '';
 
-        overlay.appendChild(meta);
-        overlay.appendChild(btn);
-        card.appendChild(v);
-        card.appendChild(overlay);
-        card.appendChild(hint);
+        const vb = document.createElement('div');
+        vb.className = 'video-box';
+        const v = document.createElement('video');
+        v.controls = true;
+        v.playsInline = true;
+        v.src = c.videoUrl || '';
+        vb.appendChild(v);
 
-        $('feed').appendChild(card);
-
-        // 화면에 보일 때만 재생: IntersectionObserver
-        io.observe(v);
-    }
-
-    // 가시성 기반 자동 재생/일시정지
-    const io = new IntersectionObserver((entries) => {
-        entries.forEach(async (e) => {
-            const v = e.target;
-            if (e.isIntersecting && e.intersectionRatio >= 0.6) {
-                try { await v.play(); } catch(_) {}
-            } else {
-                v.pause();
+        const acts = document.createElement('div');
+        acts.className = 'actions';
+        const likeBtn = document.createElement('button');
+        likeBtn.className = 'btn';
+        likeBtn.textContent = '좋아요';
+        likeBtn.addEventListener('click', async () => {
+            try {
+                await getJson(`/api/clips/${c.id}/like`, { method: 'POST' });
+                toast('처리됨');
+                await refreshCounts(card);
+            } catch (e) {
+                toast('실패');
+                console.error(e);
             }
         });
-    }, { threshold: [0, 0.6, 1] });
+        const viewBtn = document.createElement('button');
+        viewBtn.className = 'btn';
+        viewBtn.textContent = '조회수 +1';
+        viewBtn.addEventListener('click', async () => {
+            try {
+                await getJson(`/api/clips/${c.id}/view`, { method: 'POST' });
+                toast('처리됨');
+                await refreshCounts(card);
+            } catch (e) {
+                toast('실패');
+                console.error(e);
+            }
+        });
+        const counts = document.createElement('div');
+        counts.className = 'counts';
+        const likeCnt = likeCountOf(c);
+        const commentCnt = commentCountOf(c);
+        counts.textContent = `좋아요 ${likeCnt} · 댓글 ${commentCnt}`;
+        counts.dataset.likes = likeCnt;
+        counts.dataset.comments = commentCnt;
+        acts.appendChild(likeBtn);
+        acts.appendChild(viewBtn);
+        acts.appendChild(counts);
 
-    // 무한 스크롤: sentinel이 보이면 다음 페이지 로드
-    const bottomIO = new IntersectionObserver((entries) => {
-        if (entries.some(e => e.isIntersecting)) loadMore();
+        const comments = document.createElement('div');
+        comments.className = 'comments';
+        const list = document.createElement('div');
+        list.className = 'comment-list';
+        list.id = `comment-list-${c.id}`;
+        const form = document.createElement('div');
+        form.className = 'comment-new';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = '댓글을 입력하세요';
+        input.id = `comment-input-${c.id}`;
+        const send = document.createElement('button');
+        send.className = 'btn';
+        send.textContent = '등록';
+        send.addEventListener('click', async () => {
+            const text = input.value.trim();
+            if (!text) return;
+            try {
+                await getJson(`/api/clips/${c.id}/comments`, { method:'POST', body: JSON.stringify({ content: text }) });
+                input.value = '';
+                toast('댓글 등록됨');
+                await loadComments(c.id);
+                await bumpCommentCount(card);
+            } catch (e) {
+                toast('댓글 실패');
+                console.error(e);
+            }
+        });
+        form.appendChild(input);
+        form.appendChild(send);
+        comments.appendChild(list);
+        comments.appendChild(form);
+
+        card.appendChild(meta);
+        card.appendChild(cap);
+        card.appendChild(vb);
+        card.appendChild(acts);
+        card.appendChild(comments);
+
+        loadComments(c.id);
+        return card;
+    }
+
+    async function refreshCounts(cardEl) {
+        const clipId = cardEl.dataset.clipId;
+        try {
+            const d = await getJson(`/api/clips/feed?page=0&size=1&id=${clipId}`);
+            const list = pick(d);
+            const found = list.find(x => String(x.id) === String(clipId));
+            if (!found) return;
+            cardEl._clip = found;
+            const counts = cardEl.querySelector('.counts');
+            const likes = likeCountOf(found);
+            const comments = commentCountOf(found);
+            counts.dataset.likes = likes;
+            counts.dataset.comments = comments;
+            counts.textContent = `좋아요 ${likes} · 댓글 ${comments}`;
+            refreshAuthorNames();
+        } catch {}
+    }
+
+    async function bumpCommentCount(cardEl) {
+        const counts = cardEl.querySelector('.counts');
+        const cur = Number(counts.dataset.comments || 0) + 1;
+        counts.dataset.comments = String(cur);
+        const likes = Number(counts.dataset.likes || 0);
+        counts.textContent = `좋아요 ${likes} · 댓글 ${cur}`;
+    }
+
+    // ========== COMMENTS & REPLIES ==========
+    async function loadComments(clipId) {
+        try {
+            const data = await getJson(`/api/clips/${clipId}/comments`);
+            const list = pick(data);
+            renderComments(clipId, list);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function renderComments(clipId, arr) {
+        const box = document.getElementById(`comment-list-${clipId}`);
+        if (!box) return;
+        const frag = document.createDocumentFragment();
+
+        arr.forEach(c => {
+            const item = document.createElement('div');
+            item.className = 'comment-item';
+
+            const av = document.createElement('div');
+            av.className = 'avatar';
+
+            const textWrap = document.createElement('div');
+
+            const who = document.createElement('div');
+            who.className = 'who';
+            who.textContent = (c.authorName && c.authorName.trim()) ? c.authorName : resolveName(c, '익명');
+
+            const text = document.createElement('div');
+            text.className = 'text';
+            text.textContent = c.content ?? '';
+
+            // ====== 답글 UI ======
+            const actions = document.createElement('div');
+            actions.style.marginTop = '4px';
+
+            const replyToggle = document.createElement('button');
+            replyToggle.className = 'btn';
+            replyToggle.textContent = '답글';
+            replyToggle.style.padding = '4px 8px';
+            replyToggle.style.fontSize = '12px';
+
+            const replyBox = document.createElement('div');
+            replyBox.style.display = 'none';
+            replyBox.style.marginTop = '6px';
+            replyBox.className = 'comment-new';
+
+            const replyInput = document.createElement('input');
+            replyInput.type = 'text';
+            replyInput.placeholder = '답글을 입력하세요';
+
+            const replySend = document.createElement('button');
+            replySend.className = 'btn';
+            replySend.textContent = '등록';
+
+            replyBox.appendChild(replyInput);
+            replyBox.appendChild(replySend);
+
+            const repliesWrap = document.createElement('div');
+            repliesWrap.id = `replies-${clipId}-${c.id}`;
+            repliesWrap.style.marginTop = '8px';
+            repliesWrap.style.paddingLeft = '24px';
+            repliesWrap.style.borderLeft = '1px solid #2a2a2a';
+            repliesWrap.classList.add('hidden');
+
+            let repliesOpen = false;
+            replyToggle.addEventListener('click', async () => {
+                repliesOpen = !repliesOpen;
+                replyBox.style.display = repliesOpen ? 'flex' : 'none';
+                repliesWrap.classList.toggle('hidden', !repliesOpen);
+                if (repliesOpen) await loadReplies(clipId, c.id);
+            });
+
+            replySend.addEventListener('click', async () => {
+                const txt = replyInput.value.trim();
+                if (!txt) return;
+                try {
+                    await postReply(clipId, c.id, txt);
+                    replyInput.value = '';
+                    await loadReplies(clipId, c.id);
+                } catch (e) {
+                    console.error(e);
+                    toast('답글 등록 실패');
+                }
+            });
+
+            actions.appendChild(replyToggle);
+            textWrap.appendChild(who);
+            textWrap.appendChild(text);
+            textWrap.appendChild(actions);
+            textWrap.appendChild(replyBox);
+            textWrap.appendChild(repliesWrap);
+
+            item.appendChild(av);
+            item.appendChild(textWrap);
+            frag.appendChild(item);
+        });
+
+        box.innerHTML = '';
+        box.appendChild(frag);
+    }
+
+    async function loadReplies(clipId, commentId, page = 0, size = 20) {
+        try {
+            const data = await getJson(`/api/clips/${clipId}/comments/${commentId}/replies?page=${page}&size=${size}`);
+            const list = Array.isArray(data) ? data : (Array.isArray(data?.content) ? data.content : []);
+            renderReplies(clipId, commentId, list);
+        } catch (e) {
+            console.error(e);
+            toast('답글 불러오기 실패');
+        }
+    }
+
+    function renderReplies(clipId, parentCommentId, arr) {
+        const box = document.getElementById(`replies-${clipId}-${parentCommentId}`);
+        if (!box) return;
+        const frag = document.createDocumentFragment();
+
+        arr.forEach(r => {
+            const row = document.createElement('div');
+            row.className = 'comment-item';
+            row.style.marginTop = '6px';
+
+            const av = document.createElement('div');
+            av.className = 'avatar';
+
+            const wrap = document.createElement('div');
+
+            const who = document.createElement('div');
+            who.className = 'who';
+            who.textContent = (r.authorName && r.authorName.trim()) ? r.authorName : resolveName(r, '익명');
+
+            const txt = document.createElement('div');
+            txt.className = 'text';
+            txt.textContent = r.content ?? '';
+
+            wrap.appendChild(who);
+            wrap.appendChild(txt);
+
+            row.appendChild(av);
+            row.appendChild(wrap);
+            frag.appendChild(row);
+        });
+
+        box.innerHTML = '';
+        box.appendChild(frag);
+    }
+
+    async function postReply(clipId, parentCommentId, content) {
+        // (A) 새 엔드포인트 방식
+        return getJson(`/api/clips/${clipId}/comments/${parentCommentId}/replies`, {
+            method: 'POST',
+            body: JSON.stringify({ content })
+        });
+
+        // (B) 같은 엔드포인트 + parentId 방식이라면 위를 지우고 아래로 교체:
+        // return getJson(`/api/clips/${clipId}/comments`, {
+        //   method: 'POST',
+        //   body: JSON.stringify({ parentId: parentCommentId, content })
+        // });
+    }
+
+    // ========== BOOT ==========
+    document.getElementById('refreshBtn').addEventListener('click', () => loadFeed(true));
+    document.getElementById('loadMore').addEventListener('click', () => {
+        if (state.page + 1 < state.totalPages) { state.page += 1; loadFeed(false); }
     });
-    bottomIO.observe($('sentinel'));
 
-    // 초기 로드
-    loadMore();
+    ensureMembersLoaded().finally(() => loadFeed(true));
 </script>
 </body>
 </html>

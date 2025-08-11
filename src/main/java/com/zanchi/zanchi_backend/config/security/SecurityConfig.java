@@ -57,7 +57,6 @@ public class SecurityConfig {
                         new JwtAuthenticationFilter(jwtTokenProvider, memberDetailsService, redisTemplate, ignoreRedisErrorsInDev),
                         UsernamePasswordAuthenticationFilter.class
                 );
-
         return http.build();
     }
 }

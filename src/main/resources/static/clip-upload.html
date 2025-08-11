@@ -1,128 +1,210 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>Clip Upload Test</title>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>클립 올리기</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
-    h1 { font-size: 20px; }
-    .row { margin: 12px 0; }
-    label { display:block; font-weight: 600; margin-bottom: 6px; }
-    input[type="text"] { width: 100%; padding: 8px; }
-    input[type="file"] { padding: 8px 0; }
-    button { padding: 10px 14px; cursor: pointer; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
-    pre { background: #111; color: #0f0; padding: 12px; overflow: auto; min-height: 120px; }
-    small.muted { color: #777; }
-    video { max-width: 100%; display: none; margin-top: 8px; }
+    :root{--bg:#f5f5f7;--panel:#fff;--text:#111;--muted:#6b7280;--primary:#f3caa1;--ring:#e5e7eb;--shadow:0 6px 18px rgba(0,0,0,.06)}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;background:linear-gradient(#0f1115 0,#0b0d11 20%,#0b0d11 100%);display:grid;place-items:center;color:var(--text);font-family:-apple-system,system-ui,Segoe UI,Roboto,"Noto Sans KR",sans-serif}
+    .phone{width:390px;max-width:100vw;height:844px;max-height:100dvh;background:var(--bg);border-radius:28px;box-shadow:0 20px 40px rgba(0,0,0,.35);overflow:hidden;display:flex;flex-direction:column}
+    .topbar{height:56px;display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--ring)}
+    .back{width:36px;height:36px;border-radius:18px;display:grid;place-items:center;cursor:pointer}
+    .back svg{width:22px;height:22px}.title{font-weight:700}
+    .content{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+    .card{background:var(--panel);margin:12px;padding:14px;border-radius:18px;box-shadow:var(--shadow)}
+    .video-wrap{position:relative;width:100%;border-radius:22px;background:#c7c9cf;aspect-ratio:9/16;overflow:hidden;display:flex;align-items:center;justify-content:center}
+    .video-wrap video{width:100%;height:100%;object-fit:cover;display:none}
+    .video-hint{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-weight:600;letter-spacing:.3px;background:repeating-linear-gradient(45deg,#9aa0a6 0,#9aa0a6 8px,#a7adb4 8px,#a7adb4 16px)}
+    .fab{position:absolute;right:10px;bottom:-22px;width:72px;height:72px;border-radius:50%;background:radial-gradient(120% 120% at 20% 20%,#6c7bff,#a66cff 45%,#ff6aa0 100%);box-shadow:0 8px 20px rgba(0,0,0,.25);display:grid;place-items:center;color:#fff;font-weight:800;cursor:pointer;user-select:none;border:3px solid #e8e8ea}
+    .fab small{display:block;font-size:14px}.row{margin-top:16px}
+    .caption{width:100%;border:none;outline:none;padding:10px 0;font-size:16px;background:transparent}
+    .divider{height:1px;background:var(--ring);margin:10px 0}
+    .notice{font-size:13px;color:#444;line-height:1.6}
+    .agree{display:flex;align-items:center;gap:10px;margin-top:10px}.agree input{width:18px;height:18px}
+    .bottom{position:sticky;bottom:0;background:transparent;padding:14px}
+    .submit{width:100%;height:56px;border-radius:28px;border:none;font-weight:700;font-size:16px;background:var(--primary);color:#fff;box-shadow:0 8px 16px rgba(243,202,161,.35);cursor:not-allowed;opacity:.55;transition:.2s}
+    .submit.enabled{opacity:1;cursor:pointer}
+    input[type=file]{display:none}
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#111;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.25s}
+    .toast.show{opacity:1}
   </style>
 </head>
 <body>
-<h1>클립 업로드 테스트</h1>
+<div class="phone">
+  <div class="topbar">
+    <div class="back" onclick="history.back()" aria-label="뒤로">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="title">클립 올리기</div>
+    <div style="margin-left:auto"></div>
+  </div>
 
-<div class="row">
-  <label>서버 베이스 URL <small class="muted">(비워두면 현재 호스트 사용)</small></label>
-  <input id="baseUrl" type="text" placeholder="예) http://localhost:8080">
+  <div class="content">
+    <div class="card">
+      <div class="video-wrap" id="videoWrap">
+        <div class="video-hint" id="hint">동영상을 선택하세요</div>
+        <video id="player" playsinline controls></video>
+        <div class="fab" id="pickFab"><small>나겸</small></div>
+      </div>
+
+      <input id="file" type="file" accept="video/*" />
+
+      <div class="row">
+        <input id="caption" class="caption" maxlength="150" placeholder="캡션 추가..." />
+        <div class="divider"></div>
+        <p class="notice">
+          잔치픽 순위로 상위 10명에게 공연 기회가 주어지며, 이후 본인에게 참여 의사가 달려 있음을 고지합니다
+        </p>
+        <label class="agree">
+          <input id="agree" type="checkbox" />
+          <span>동의합니다 [필수]</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <button id="submit" class="submit" disabled>게시하기</button>
+    </div>
+  </div>
 </div>
 
-<div class="row">
-  <label>JWT 토큰 <small class="muted">(앞에 <b>Bearer</b> 쓰지 말고 토큰 문자열만!)</small></label>
-  <input id="token" type="text" placeholder="eyJhbGciOi...">
-</div>
-
-<div class="row">
-  <label>캡션</label>
-  <input id="caption" type="text" placeholder="예) 첫 업로드 테스트">
-</div>
-
-<div class="row">
-  <label>동영상 파일</label>
-  <input id="video" type="file" accept="video/*">
-  <video id="preview" controls></video>
-</div>
-
-<div class="actions">
-  <button id="btnUpload">/api/clips 업로드</button>
-  <button id="btnWhoami">/api/auth/whoami 확인</button>
-</div>
-
-<pre id="out">여기에 응답이 출력됩니다…</pre>
+<div class="toast" id="toast"></div>
 
 <script>
-  const $ = (id) => document.getElementById(id);
-  const out = $("out");
-  const video = $("video");
-  const preview = $("preview");
+  // ===== 엘리먼트 =====
+  const fileInput = document.getElementById('file');
+  const player    = document.getElementById('player');
+  const hint      = document.getElementById('hint');
+  const pickFab   = document.getElementById('pickFab');
+  const agree     = document.getElementById('agree');
+  const caption   = document.getElementById('caption');
+  const submitBtn = document.getElementById('submit');
+  const toast     = document.getElementById('toast');
 
-  $("video").addEventListener("change", (e) => {
-    const f = e.target.files[0];
-    if (f) {
-      const url = URL.createObjectURL(f);
-      preview.src = url;
-      preview.style.display = "block";
-    } else {
-      preview.removeAttribute("src");
-      preview.style.display = "none";
-    }
+  // ===== auth helper (중요) =====
+  function getAuthHeader() {
+    let t = localStorage.getItem('token') || localStorage.getItem('jwt');
+    if (!t) return null;
+    t = t.startsWith('Bearer ') ? t : `Bearer ${t}`;
+    // 앞으로 token만 사용하도록 정리
+    localStorage.setItem('token', t);
+    localStorage.removeItem('jwt');
+    return t; // "Bearer eyJ..."
+  }
+
+  // ===== 상태 =====
+  let videoSelected = false;
+
+  // 파일 선택 트리거
+  pickFab.addEventListener('click', () => fileInput.click());
+
+  // 파일 선택 → 프리뷰
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    player.src = url;
+    player.style.display = 'block';
+    hint.style.display = 'none';
+    videoSelected = true;
+    updateButtonState();
   });
 
-  function toUrl(path) {
-    const base = $("baseUrl").value.trim();
-    if (!base) return path;
-    return base.replace(/\/+$/, "") + path;
+  // 동의/캡션 변경 시 버튼 활성화
+  agree.addEventListener('change', updateButtonState);
+  caption.addEventListener('input', updateButtonState);
+
+  function updateButtonState() {
+    const ok = videoSelected && agree.checked;
+    submitBtn.disabled = !ok;
+    submitBtn.classList.toggle('enabled', ok);
   }
 
-  function authHeader() {
-    const t = $("token").value.trim();
-    if (!t) throw new Error("JWT 토큰을 입력하세요.");
-    return "Bearer " + t; // 🔴 여기서 Bearer 접두사 붙여줌
+  function showToast(msg, ms=1600){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'), ms);
   }
 
-  async function callWhoami() {
-    out.textContent = "호출 중...";
-    try {
-      const res = await fetch(toUrl("/api/auth/whoami"), {
-        method: "GET",
-        headers: { "Authorization": authHeader() }
-      });
-      const text = await res.text();
-      out.textContent = `status=${res.status}\n` + pretty(text);
-    } catch (e) {
-      out.textContent = "에러: " + e;
+  // ===== 업로드 =====
+  async function upload() {
+    if (submitBtn.disabled) return;
+
+    const auth = getAuthHeader();
+    if (!auth) {
+      showToast('로그인이 필요합니다');
+      location.href = '/login.html';
+      return;
     }
-  }
 
-  async function uploadClip() {
-    out.textContent = "업로드 중...";
+    const f = fileInput.files[0];
+    if (!f) { showToast('동영상을 선택하세요'); return; }
+
+    submitBtn.textContent = '업로드 중...';
+    submitBtn.disabled = true;
+
     try {
-      const file = $("video").files[0];
-      if (!file) { out.textContent = "동영상 파일을 선택하세요."; return; }
-
       const fd = new FormData();
-      fd.append("caption", $("caption").value);
-      fd.append("video", file);
+      fd.append('video', f);
+      fd.append('caption', caption.value || '');
 
-      const res = await fetch(toUrl("/api/clips"), {
-        method: "POST",
-        headers: { "Authorization": authHeader() },
+      // FormData 전송 시 Content-Type 강제 설정 금지!
+      const res = await fetch('/api/clips', {
+        method: 'POST',
+        headers: { Authorization: auth },
         body: fd
       });
 
-      const text = await res.text();
-      out.textContent = `status=${res.status}\n` + pretty(text);
+      if (res.status === 401) {
+        showToast('로그인이 만료되었습니다. 다시 로그인해주세요.');
+        localStorage.removeItem('token');
+        setTimeout(()=> location.href = '/login.html', 600);
+        return;
+      }
+      if (!res.ok) {
+        const txt = await res.text().catch(()=> '');
+        throw new Error(`업로드 실패 (${res.status})\n${txt}`);
+      }
+
+      await res.json().catch(()=> ({}));
+      showToast('업로드 완료!');
+      setTimeout(()=> location.href = '/clip-feed.html', 600);
     } catch (e) {
-      out.textContent = "에러: " + e;
+      console.error(e);
+      showToast(e.message || '에러 발생');
+    } finally {
+      submitBtn.textContent = '게시하기';
+      updateButtonState();
     }
   }
 
-  function pretty(text) {
-    try { return JSON.stringify(JSON.parse(text), null, 2); }
-    catch { return text; }
-  }
+  submitBtn.addEventListener('click', upload);
 
-  $("btnUpload").addEventListener("click", uploadClip);
-  $("btnWhoami").addEventListener("click", callWhoami);
+  // 개발 편의: F2 눌러 토큰 입력/수정
+  window.addEventListener('keydown', (e)=>{
+    if (e.key === 'F2') {
+      const cur = (localStorage.getItem('token') || localStorage.getItem('jwt') || '').replace(/^Bearer\s+/,'');
+      const t = prompt('JWT를 입력하세요 (Bearer 제외, token으로 저장)', cur);
+      if (t !== null) {
+        localStorage.setItem('token', `Bearer ${t.trim()}`);
+        localStorage.removeItem('jwt');
+        showToast('토큰 저장 완료');
+      }
+    }
+  });
+
+  // 진입 시 토큰 점검(선택)
+  (async () => {
+    const auth = getAuthHeader();
+    if (!auth) return;
+    try {
+      const me = await fetch('/api/auth/whoami', { headers: { Authorization: auth } })
+              .then(r => r.ok ? r.json() : {auth:false}).catch(()=>({auth:false}));
+      if (!me.auth) showToast('다시 로그인해주세요 (F2로 토큰 저장 가능)');
+    } catch {}
+  })();
 </script>
 </body>
 </html>
