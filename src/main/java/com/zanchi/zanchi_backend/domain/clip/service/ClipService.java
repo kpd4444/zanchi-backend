@@ -3,9 +3,11 @@ package com.zanchi.zanchi_backend.domain.clip.service;
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
 import com.zanchi.zanchi_backend.domain.clip.ClipLike;
+import com.zanchi.zanchi_backend.domain.clip.ClipSave;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
+import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,8 @@ public class ClipService {
     private final ClipCommentRepository commentRepository;
     private final FileStorageService storage;
     private final MemberRepository memberRepository;
+    private final ClipSaveRepository clipSaveRepository;
+
 
     /**
      * 클립 업로드
@@ -220,5 +224,46 @@ public class ClipService {
     @Transactional(readOnly = true)
     public Page<Clip> myClips(Long memberId, Pageable pageable) {
         return clipRepository.findByUploader_IdOrderByIdDesc(memberId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Clip> searchClips(String q, Pageable pageable) {
+        String s = (q == null) ? "" : q.trim();
+        return clipRepository.search(s, pageable);
+    }
+
+    //----------------------------------------
+    // 저장 토글
+    @Transactional
+    public boolean toggleSave(Long clipId, Long memberId){
+        if (clipSaveRepository.existsByMember_IdAndClip_Id(memberId, clipId)) {
+            clipSaveRepository.deleteByMember_IdAndClip_Id(memberId, clipId);
+            return false; // 해제됨
+        }
+        var member = memberRepository.getReferenceById(memberId);
+        var clip   = clipRepository.getReferenceById(clipId);
+        clipSaveRepository.save(ClipSave.builder().member(member).clip(clip).build());
+        return true; // 저장됨
+    }
+
+    // 내가 저장한 클립 목록
+    @Transactional(readOnly = true)
+    public Page<Clip> savedClips(Long memberId, Pageable pageable){
+        return clipSaveRepository
+                .findByMember_IdOrderByIdDesc(memberId, pageable)
+                .map(ClipSave::getClip);
+    }
+
+    @Transactional
+    public void unsave(Long memberId, Long clipId){
+        // 존재하지 않아도 에러 없이 무시
+        clipSaveRepository.deleteByMemberIdAndClipId(memberId, clipId);
+    }
+    //--------------------------------
+
+    @Transactional(readOnly = true)
+    public Page<Clip> pickClips(Long memberId, Pageable pageable){
+        return likeRepository.findByMemberIdOrderByIdDesc(memberId, pageable)
+                .map(ClipLike::getClip);
     }
 }

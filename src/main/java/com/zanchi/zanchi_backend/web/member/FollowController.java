@@ -35,17 +35,19 @@ public class FollowController {
     // 팔로워 목록(나를 팔로우하는 사람들)
     @GetMapping("/{userId}/followers")
     public Page<MemberSummary> followers(@PathVariable Long userId,
+                                         @RequestParam(defaultValue = "") String q,
                                          @RequestParam(defaultValue="0") int page,
                                          @RequestParam(defaultValue="20") int size) {
-        return followService.followers(userId, PageRequest.of(page, size));
+        return followService.followers(userId, PageRequest.of(page, size), q.trim());
     }
 
     // 팔로잉 목록(내가 팔로우한 사람들)
     @GetMapping("/{userId}/following")
     public Page<MemberSummary> following(@PathVariable Long userId,
+                                         @RequestParam(defaultValue = "") String q,
                                          @RequestParam(defaultValue="0") int page,
                                          @RequestParam(defaultValue="20") int size) {
-        return followService.following(userId, PageRequest.of(page, size));
+        return followService.following(userId, PageRequest.of(page, size),q.trim());
     }
 
     // 관계 상태(내가 이 사람을 팔로우 중인지)
@@ -60,5 +62,14 @@ public class FollowController {
     @GetMapping("/{userId}/follow-counts")
     public FollowCountsRes counts(@PathVariable Long userId) {
         return followService.counts(userId);
+    }
+
+    //--------------------------------------'
+    // 전역 계정 검색 (탭 '계정' 용)
+    @GetMapping("/search")
+    public Page<MemberSummary> searchMembers(@RequestParam String q,
+                                             @RequestParam(defaultValue="0") int page,
+                                             @RequestParam(defaultValue="20") int size) {
+        return followService.searchMembers(q, PageRequest.of(page, size));
     }
 }

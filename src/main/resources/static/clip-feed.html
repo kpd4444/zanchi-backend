@@ -17,7 +17,6 @@
         .card .meta { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid #1b1b1b; }
         .avatar { width:34px; height:34px; border-radius:50%; background:#333; flex:0 0 auto; }
         .name { font-weight:700; font-size:14px; }
-        /* ⬇️ 작성자 링크 스타일 */
         .name a { color:inherit; text-decoration:none; }
         .name a:hover { text-decoration:underline; }
         .time { color:#a0a0a0; font-size:12px; }
@@ -38,6 +37,19 @@
         .loadmore { display:block; width:100%; margin:10px 0 24px; }
         .hidden { display:none !important; }
         .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 14px; border-radius:10px; border:1px solid #333; z-index:9999; font-size:13px; }
+
+        /* ====== 신고 모달(하단 시트) ====== */
+        .r-dim{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.2s;z-index:50}
+        .r-dim.show{opacity:1;pointer-events:auto}
+        .r-sheet{position:fixed;left:50%;transform:translateX(-50%) translateY(100%);bottom:0;width:min(680px,100vw);max-height:75vh;background:#111;border:1px solid #222;border-radius:16px 16px 0 0;box-shadow:0 -10px 24px rgba(0,0,0,.35);transition:.25s;z-index:51;display:flex;flex-direction:column}
+        .r-sheet.show{transform:translateX(-50%) translateY(0)}
+        .r-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #1b1b1b}
+        .r-title{font-weight:800}
+        .r-body{padding:10px 14px;overflow:auto}
+        .r-row{display:flex;gap:10px;align-items:center;margin:8px 0}
+        .r-detail{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a2a2a;background:#141414;color:#fff;min-height:72px}
+        .r-actions{display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid #1b1b1b}
+
         @media (prefers-color-scheme: light) {
             body { background:#f7f7f8; color:#111; }
             header { background:rgba(255,255,255,.7); border-color:rgba(0,0,0,.06); }
@@ -48,6 +60,8 @@
             .btn { background:#fafafa; color:#111; border-color:#eaeaea; }
             .comment-new input { background:#fff; color:#111; border-color:#eaeaea; }
             .toast { background:#111; }
+            .r-sheet{background:#fff;border-color:#eaeaea}
+            .r-detail{background:#fff;color:#111;border-color:#eaeaea}
         }
     </style>
 </head>
@@ -112,7 +126,7 @@
     function likeCountOf(c){ return c.likeCount ?? (Array.isArray(c.likes) ? c.likes.length : 0); }
     function commentCountOf(c){ return c.commentCount ?? (Array.isArray(c.comments) ? c.comments.length : 0); }
 
-    // ========== MEMBER CACHE (id -> name) ==========
+    // ========== MEMBER CACHE ==========
     const memberNameCache = new Map();
     let membersLoaded = false;
 
@@ -148,7 +162,6 @@
         return null;
     }
 
-    // ⬇️ 이름을 (링크 or 텍스트)로 넣어주는 헬퍼
     function setName(el, clip) {
         const display = resolveName(clip, null) ?? (clipAuthorFromCache(clip) ?? '작성자');
         if (clip && clip.uploaderId != null) {
@@ -172,6 +185,72 @@
         });
     }
 
+    // ========== SAVED (저장한 클립) 상태 캐시 ==========
+    let savedKnown = false;
+    let savedSet = new Set(); // String(clipId)
+
+    async function ensureSavedLoaded() {
+        if (savedKnown) return;
+        try {
+            const data = await getJson('/api/me/saved?page=0&size=200');
+            const list = pick(data);
+            savedSet = new Set(list.map(x => String(x.id)));
+        } catch (e) {
+            // 못 불러와도 기능 자체(토글)는 동작하게 둠
+        } finally {
+            savedKnown = true;
+            refreshSavedButtons();
+        }
+    }
+
+    function refreshSavedButtons(){
+        if (!savedKnown) return;
+        document.querySelectorAll('.save-btn').forEach(btn=>{
+            const id = btn.dataset.clipId;
+            if (savedSet.has(String(id))) {
+                btn.dataset.saved = '1';
+                btn.textContent = '저장 해제';
+            } else {
+                btn.dataset.saved = '0';
+                btn.textContent = '저장';
+            }
+        });
+    }
+
+    async function toggleSave(clipId, btn){
+        const isSaved = (btn.dataset.saved === '1') || savedSet.has(String(clipId));
+        try{
+            if (isSaved) {
+                // 우선 DELETE 시도, 실패 시 POST(토글) 폴백
+                try{
+                    await getJson(`/api/clips/${clipId}/save`, { method:'DELETE' });
+                }catch{
+                    await getJson(`/api/clips/${clipId}/save`, { method:'POST' });
+                }
+                savedSet.delete(String(clipId));
+                btn.dataset.saved = '0';
+                btn.textContent = '저장';
+                toast('저장 해제됨');
+            } else {
+                // 우선 POST 시도, 실패 시 DELETE(토글) 폴백
+                try{
+                    await getJson(`/api/clips/${clipId}/save`, { method:'POST' });
+                }catch{
+                    await getJson(`/api/clips/${clipId}/save`, { method:'DELETE' });
+                }
+                savedSet.add(String(clipId));
+                btn.dataset.saved = '1';
+                btn.textContent = '저장 해제';
+                toast('저장됨');
+            }
+            savedKnown = true;
+        }catch(e){
+            console.error(e);
+            const msg = (e && e.message || '').toUpperCase().includes('UNAUTHORIZED') ? '로그인이 필요합니다.' : '실패(네트워크/서버 확인)';
+            toast(msg);
+        }
+    }
+
     // ========== HTTP ==========
     async function getJson(url, opt = {}) {
         const headers = opt.headers ? {...opt.headers} : {};
@@ -183,7 +262,9 @@
             const txt = await res.text().catch(()=> '');
             throw new Error(txt || 'request failed');
         }
-        return res.json();
+        const ct = res.headers.get('Content-Type') || '';
+        if (ct.includes('application/json')) return res.json();
+        return res.text().catch(()=>null);
     }
 
     // ========== FEED ==========
@@ -200,7 +281,9 @@
             const moreBtn = document.getElementById('loadMore');
             if (state.page + 1 < state.totalPages) moreBtn.classList.remove('hidden');
             else moreBtn.classList.add('hidden');
+
             refreshAuthorNames();
+            ensureSavedLoaded(); // 저장 상태 로딩 후 버튼 라벨 갱신
         } catch (e) {
             toast('피드 불러오기 실패');
             console.error(e);
@@ -220,6 +303,97 @@
         try { return s ? new Date(s).toLocaleString() : ''; } catch { return ''; }
     }
 
+    // ====== 신고 모달 ======
+    const REPORT_REASONS = [
+        { key:'MISINFO_SCAM',   label:'허위 정보/사기' },
+        { key:'INAPPROPRIATE',  label:'부적절한 콘텐츠' },
+        { key:'VIOLENCE_CRIME', label:'폭력·학대·범죄' },
+        { key:'SEXUAL_CONTENT', label:'성적인 콘텐츠' },
+    ];
+
+    function openReportSheet(clipId){
+        const dim = document.createElement('div');
+        dim.className = 'r-dim';
+        const sheet = document.createElement('section');
+        sheet.className = 'r-sheet';
+        sheet.setAttribute('role','dialog');
+        sheet.setAttribute('aria-modal','true');
+
+        const head = document.createElement('div');
+        head.className = 'r-head';
+        const title = document.createElement('div');
+        title.className = 'r-title';
+        title.textContent = '신고하기';
+        const closeBtn = document.createElement('button');
+        closeBtn.className='btn';
+        closeBtn.textContent='닫기';
+        closeBtn.style.marginLeft='auto';
+        closeBtn.addEventListener('click', close);
+        head.appendChild(title); head.appendChild(closeBtn);
+
+        const body = document.createElement('div');
+        body.className = 'r-body';
+
+        const group = document.createElement('div');
+        REPORT_REASONS.forEach((r,idx)=>{
+            const row = document.createElement('label');
+            row.className='r-row';
+            const radio = document.createElement('input');
+            radio.type='radio'; radio.name='report-reason'; radio.value=r.key;
+            if(idx===0) radio.checked = true;
+            const span = document.createElement('span'); span.textContent = r.label;
+            row.appendChild(radio); row.appendChild(span);
+            group.appendChild(row);
+        });
+
+        const detail = document.createElement('textarea');
+        detail.className='r-detail';
+        detail.placeholder='설명(선택)';
+
+        body.appendChild(group);
+        body.appendChild(detail);
+
+        const acts = document.createElement('div');
+        acts.className='r-actions';
+        const submit = document.createElement('button');
+        submit.className='btn';
+        submit.textContent='신고 접수';
+        submit.addEventListener('click', async ()=>{
+            try{
+                const sel = sheet.querySelector('input[name="report-reason"]:checked');
+                const reason = sel ? sel.value : REPORT_REASONS[0].key;
+                const payload = { reason, detail: detail.value || '' };
+                await getJson(`/api/reports/clips/${clipId}`, { method:'POST', body: JSON.stringify(payload) });
+                toast('신고가 접수되었습니다.');
+                close();
+            }catch(e){
+                console.error(e);
+                const msg = (e && e.message || '').toUpperCase().includes('UNAUTHORIZED') ? '로그인이 필요합니다.' : '신고 접수 실패';
+                toast(msg);
+            }
+        });
+        acts.appendChild(submit);
+
+        sheet.appendChild(head);
+        sheet.appendChild(body);
+        sheet.appendChild(acts);
+
+        function close(){
+            dim.classList.remove('show');
+            sheet.classList.remove('show');
+            setTimeout(()=>{ dim.remove(); sheet.remove(); }, 200);
+            document.removeEventListener('keydown', onEsc);
+        }
+        function onEsc(ev){ if(ev.key==='Escape') close(); }
+
+        dim.addEventListener('click', close);
+        document.addEventListener('keydown', onEsc);
+
+        document.body.appendChild(dim);
+        document.body.appendChild(sheet);
+        requestAnimationFrame(()=>{ dim.classList.add('show'); sheet.classList.add('show'); });
+    }
+
     function buildClipCard(c) {
         const card = document.createElement('article');
         card.className = 'card';
@@ -234,8 +408,8 @@
 
         const name = document.createElement('div');
         name.className = 'name';
-        setName(name, c);        // ⬅️ 여기서 링크/텍스트 설정
-        ensureMembersLoaded();   // 캐시 로딩 후 refreshAuthorNames로 다시 반영
+        setName(name, c);
+        ensureMembersLoaded();
 
         const time = document.createElement('div');
         time.className = 'time';
@@ -259,6 +433,7 @@
 
         const acts = document.createElement('div');
         acts.className = 'actions';
+
         const likeBtn = document.createElement('button');
         likeBtn.className = 'btn';
         likeBtn.textContent = '좋아요';
@@ -272,6 +447,7 @@
                 console.error(e);
             }
         });
+
         const viewBtn = document.createElement('button');
         viewBtn.className = 'btn';
         viewBtn.textContent = '조회수 +1';
@@ -285,6 +461,21 @@
                 console.error(e);
             }
         });
+
+        /* ⬇️ 저장 버튼 */
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn save-btn';
+        saveBtn.dataset.clipId = c.id;
+        saveBtn.dataset.saved = '0';
+        saveBtn.textContent = '저장';
+        saveBtn.addEventListener('click', ()=> toggleSave(c.id, saveBtn));
+
+        /* 신고 버튼 */
+        const reportBtn = document.createElement('button');
+        reportBtn.className = 'btn';
+        reportBtn.textContent = '신고';
+        reportBtn.addEventListener('click', ()=> openReportSheet(c.id));
+
         const counts = document.createElement('div');
         counts.className = 'counts';
         const likeCnt = likeCountOf(c);
@@ -292,8 +483,11 @@
         counts.textContent = `좋아요 ${likeCnt} · 댓글 ${commentCnt}`;
         counts.dataset.likes = likeCnt;
         counts.dataset.comments = commentCnt;
+
         acts.appendChild(likeBtn);
         acts.appendChild(viewBtn);
+        acts.appendChild(saveBtn);   // ⬅️ 추가
+        acts.appendChild(reportBtn);
         acts.appendChild(counts);
 
         const comments = document.createElement('div');
@@ -353,7 +547,7 @@
             counts.dataset.likes = likes;
             counts.dataset.comments = comments;
             counts.textContent = `좋아요 ${likes} · 댓글 ${comments}`;
-            refreshAuthorNames();  // 이름도 함께 갱신(링크 유지)
+            refreshAuthorNames();
         } catch {}
     }
 
@@ -398,7 +592,6 @@
             text.className = 'text';
             text.textContent = c.content ?? '';
 
-            // ====== 답글 UI ======
             const actions = document.createElement('div');
             actions.style.marginTop = '4px';
 
@@ -515,17 +708,10 @@
     }
 
     async function postReply(clipId, parentCommentId, content) {
-        // (A) 새 엔드포인트 방식
         return getJson(`/api/clips/${clipId}/comments/${parentCommentId}/replies`, {
             method: 'POST',
             body: JSON.stringify({ content })
         });
-
-        // (B) 같은 엔드포인트 + parentId 방식이라면 위를 지우고 아래로 교체:
-        // return getJson(`/api/clips/${clipId}/comments`, {
-        //   method: 'POST',
-        //   body: JSON.stringify({ parentId: parentCommentId, content })
-        // });
     }
 
     // ========== BOOT ==========

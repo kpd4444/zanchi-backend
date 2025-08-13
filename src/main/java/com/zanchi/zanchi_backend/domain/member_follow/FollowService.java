@@ -73,4 +73,32 @@ public class FollowService {
         return new FollowCountsRes(posts,followers, following);
     }
 
+    //-----------------------검색용 -------------------
+    @Transactional(readOnly = true)
+    public Page<MemberSummary> followers(Long userId, Pageable pageable, String q) {
+        Page<MemberFollow> p = (q == null || q.isBlank())
+                ? followRepository.findByFollowing_Id(userId, pageable)
+                : followRepository.searchFollowers(userId, q.trim(), pageable);
+        return p.map(f -> MemberSummary.of(f.getFollower()));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MemberSummary> following(Long userId, Pageable pageable, String q) {
+        Page<MemberFollow> p = (q == null || q.isBlank())
+                ? followRepository.findByFollower_Id(userId, pageable)
+                : followRepository.searchFollowing(userId, q.trim(), pageable);
+        return p.map(f -> MemberSummary.of(f.getFollowing()));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MemberSummary> searchMembers(String q, Pageable pageable) {
+        if (q == null || q.isBlank()) {
+            return Page.empty(pageable);
+        }
+        return memberRepository
+                .findByNameContainingIgnoreCaseOrLoginIdContainingIgnoreCase(q, q, pageable)
+                .map(MemberSummary::of);
+    }
+    // 검색용 끝 -------------------------------------
+
 }

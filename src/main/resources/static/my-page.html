@@ -41,13 +41,18 @@
         .sheet.show{transform:translateX(-50%) translateY(0)}
         .sheet .head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #1b1b1b}
         .sheet .title{font-weight:800}
+        .sheet .head .search{display:flex;gap:8px;margin-left:auto;align-items:center}
+        .sheet .head input[type=search]{width:220px;max-width:48vw;padding:8px 10px;border-radius:10px;border:1px solid #2a2a2a;background:#141414;color:#fff;outline:none;font-size:13px}
         .sheet .list{overflow:auto;padding:6px 10px 12px}
         .person{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:10px}
         .person:hover{background:#151515}
         .pav{width:40px;height:40px;border-radius:50%;background:#333;flex:0 0 auto;object-fit:cover}
         .pname{font-weight:700}
+        .phandle{font-size:12px;color:#bdbdbd}
         .pright{margin-left:auto;display:flex;gap:6px}
         .loadmore{margin:8px auto 14px}
+        .empty{padding:18px 8px;color:#bdbdbd}
+
         @media (prefers-color-scheme:light){
             body{background:#f7f7f8;color:#111}
             header{background:rgba(255,255,255,.7);border-color:rgba(0,0,0,.06)}
@@ -55,6 +60,7 @@
             .row{border-color:#eee}
             .btn{background:#fafafa;color:#111;border-color:#eaeaea}
             .sheet{background:#fff;border-color:#eaeaea}
+            .sheet .head input[type=search]{background:#fff;color:#111;border-color:#eaeaea}
             .person:hover{background:#f7f7f8}
         }
     </style>
@@ -88,12 +94,14 @@
     </section>
 
     <nav class="tabs">
-        <div class="tab active" data-tab="mine">클립</div>
+        <div class="tab active" data-tab="mine">내 클립</div>
         <div class="tab" data-tab="saved">저장한 클립</div>
+        <div class="tab" data-tab="picks">나의 잔치픽</div>
     </nav>
 
-    <section id="mine" class="grid"></section>
+    <section id="mine"  class="grid"></section>
     <section id="saved" class="grid" style="display:none"></section>
+    <section id="picks" class="grid" style="display:none"></section>
 </main>
 
 <!-- ===== 팔로우 리스트 모달 ===== -->
@@ -101,8 +109,11 @@
 <section class="sheet" id="followSheet" aria-hidden="true">
     <div class="head">
         <div class="title" id="sheetTitle">팔로워</div>
-        <div style="margin-left:auto"></div>
-        <button class="btn" id="sheetClose">닫기</button>
+        <div class="search">
+            <input id="sheetSearch" type="search" placeholder="이름/아이디 검색" />
+            <button id="sheetClear" class="btn">지우기</button>
+            <button class="btn" id="sheetClose">닫기</button>
+        </div>
     </div>
     <div class="list" id="followList"></div>
     <button class="btn loadmore" id="sheetMore" style="display:none">더 불러오기</button>
@@ -111,7 +122,7 @@
 <div class="toast" id="toast" style="display:none"></div>
 
 <script>
-    // ===== 기본 아바타 (내장 SVG, 네트워크 404 없음) =====
+    // ===== 기본 아바타 (내장 SVG 데이터) =====
     const DEFAULT_AVATAR_DATA =
         'data:image/svg+xml;utf8,' +
         encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">
@@ -146,15 +157,16 @@
         t.style.display = 'block';
         setTimeout(()=> t.style.display = 'none', 1500);
     }
-    function pickPage(x){ return Array.isArray(x)?x : (x && Array.isArray(x.content)? x.content : []); }
-    function read(o,p){ return p.split('.').reduce((a,k)=>a&&a[k]!=null?a[k]:undefined,o); }
+    const pickPage = (x)=> Array.isArray(x)?x : (x && Array.isArray(x.content)? x.content : []);
+    const read = (o,p)=> p.split('.').reduce((a,k)=>a&&a[k]!=null?a[k]:undefined,o);
     function uploaderIdOf(clip){
         return clip.uploaderId
             ?? clip.memberId ?? clip.authorId
             ?? read(clip,'uploader.id') ?? read(clip,'author.id') ?? read(clip,'member.id');
     }
+    const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
 
-    // === getJson: 204/비-JSON 안전 처리 & FormData 헤더 자동 설정 방지 ===
+    // === getJson (FormData 자동헤더 방지 + 204/비json 안전) ===
     async function getJson(url, opt = {}) {
         const headers = opt.headers ? { ...opt.headers } : {};
         const hasBody = opt.body !== undefined && opt.body !== null;
@@ -167,7 +179,7 @@
 
         const res = await fetch(url, { ...opt, headers });
         if (!res.ok) {
-            const txt = await res.text().catch(()=>'');
+            const txt = await res.text().catch(()=> '');
             throw new Error(txt || `HTTP ${res.status}`);
         }
         if (res.status === 204) return null;
@@ -191,14 +203,17 @@
     const state = {
         me:null,
         myClips:[],
-        // follow modal
+        savedClips:[],
+        pickClips:[],
+        loaded: { saved:false, picks:false },
         sheet: {
             mode: 'followers', // 'followers' | 'following'
             page: 0,
             size: 20,
             totalPages: 1,
-            userId: null, // me.id
-            loading: false
+            userId: null,
+            loading: false,
+            q: ''
         }
     };
 
@@ -233,9 +248,50 @@
         renderMine(mine);
     }
 
+    function buildMineCard(c){
+        const card = document.createElement('article'); card.className='card'; card.dataset.id=c.id;
+
+        const v = document.createElement('video');
+        v.className='thumb'; v.src = c.videoUrl || ''; v.controls = true; v.playsInline = true;
+        card.appendChild(v);
+
+        const cap = document.createElement('div'); cap.className='cap'; cap.textContent = c.caption || '';
+        card.appendChild(cap);
+
+        const row = document.createElement('div'); row.className='row';
+        const edit = document.createElement('button'); edit.className='btn'; edit.textContent='편집';
+        const del  = document.createElement('button'); del.className='btn'; del.textContent='삭제';
+
+        edit.addEventListener('click', ()=> editCaption(c, cap));
+        del.addEventListener('click', ()=> deleteClip(c, card));
+
+        row.appendChild(edit); row.appendChild(del);
+        row.appendChild(Object.assign(document.createElement('div'), {className:'ghost', textContent:`♥ ${c.likeCount??0} · 💬 ${c.commentCount??0}`}));
+        card.appendChild(row);
+        return card;
+    }
+
     function renderMine(list){
         const box = $('#mine'); box.innerHTML='';
         if(list.length===0){ box.innerHTML = `<div class="ghost">아직 게시물이 없습니다.</div>`; return; }
+        const frag = document.createDocumentFragment();
+        list.forEach(c=> frag.appendChild(buildMineCard(c)));
+        box.appendChild(frag);
+    }
+
+    // ===== 저장한 클립 =====
+    async function loadSaved(){
+        try{
+            const page = await getJson('/api/me/saved?page=0&size=50');
+            const list = pickPage(page);
+            state.savedClips = list;
+            renderSaved(list);
+            state.loaded.saved = true;
+        }catch(e){ console.error(e); $('#saved').innerHTML = `<div class="ghost">저장한 클립 API를 불러오지 못했습니다.</div>`; }
+    }
+    function renderSaved(list){
+        const box = $('#saved'); box.innerHTML='';
+        if(list.length===0){ box.innerHTML = `<div class="ghost">저장한 클립이 없습니다.</div>`; return; }
         const frag = document.createDocumentFragment();
         list.forEach(c=>{
             const card = document.createElement('article'); card.className='card'; card.dataset.id=c.id;
@@ -248,13 +304,10 @@
             card.appendChild(cap);
 
             const row = document.createElement('div'); row.className='row';
-            const edit = document.createElement('button'); edit.className='btn'; edit.textContent='편집';
-            const del  = document.createElement('button'); del.className='btn'; del.textContent='삭제';
+            const unsave = document.createElement('button'); unsave.className='btn'; unsave.textContent='저장 해제';
+            unsave.addEventListener('click', ()=> unsaveClip(c.id, card));
 
-            edit.addEventListener('click', ()=> editCaption(c, cap));
-            del.addEventListener('click', ()=> deleteClip(c, card));
-
-            row.appendChild(edit); row.appendChild(del);
+            row.appendChild(unsave);
             row.appendChild(Object.assign(document.createElement('div'), {className:'ghost', textContent:`♥ ${c.likeCount??0} · 💬 ${c.commentCount??0}`}));
             card.appendChild(row);
 
@@ -262,8 +315,76 @@
         });
         box.appendChild(frag);
     }
+    async function unsaveClip(clipId, cardEl){
+        try{
+            // 우선 DELETE 시도, 실패하면 POST 토글로 폴백
+            await getJson(`/api/clips/${clipId}/save`, { method: 'DELETE' })
+                .catch(()=> getJson(`/api/clips/${clipId}/save`, { method: 'POST' }));
+            cardEl.remove();
+            state.savedClips = state.savedClips.filter(x=>x.id!==clipId);
+            toast('저장 해제 완료');
+            if(state.savedClips.length===0) $('#saved').innerHTML = `<div class="ghost">저장한 클립이 없습니다.</div>`;
+        }catch(e){ console.error(e); toast('저장 해제 실패'); }
+    }
 
-    // ===== actions =====
+    // ===== 나의 잔치픽(좋아요) =====
+    async function loadPicks(){
+        try{
+            const page = await getJson('/api/me/picks?page=0&size=50');
+            const list = pickPage(page);
+            state.pickClips = list;
+            renderPicks(list);
+            state.loaded.picks = true;
+        }catch(e){ console.error(e); $('#picks').innerHTML = `<div class="ghost">잔치픽 API를 불러오지 못했습니다.</div>`; }
+    }
+    function renderPicks(list){
+        const box = $('#picks'); box.innerHTML='';
+        if(list.length===0){ box.innerHTML = `<div class="ghost">아직 잔치픽이 없습니다. 마음에 드는 클립에 좋아요를 눌러보세요.</div>`; return; }
+        const frag = document.createDocumentFragment();
+        list.forEach(c=>{
+            const card = document.createElement('article'); card.className='card'; card.dataset.id=c.id;
+
+            const v = document.createElement('video');
+            v.className='thumb'; v.src = c.videoUrl || ''; v.controls = true; v.playsInline = true;
+            card.appendChild(v);
+
+            const cap = document.createElement('div'); cap.className='cap'; cap.textContent = c.caption || '';
+            card.appendChild(cap);
+
+            const row = document.createElement('div'); row.className='row';
+            const unpick = document.createElement('button'); unpick.className='btn'; unpick.textContent='잔치픽 해제';
+            unpick.addEventListener('click', ()=> unpickClip(c.id, card));
+
+            row.appendChild(unpick);
+            row.appendChild(Object.assign(document.createElement('div'), {className:'ghost', textContent:`♥ ${c.likeCount??0} · 💬 ${c.commentCount??0}`}));
+            card.appendChild(row);
+
+            frag.appendChild(card);
+        });
+        box.appendChild(frag);
+    }
+    async function unpickClip(clipId, cardEl){
+        try{
+            const res = await getJson(`/api/clips/${clipId}/like`, { method: 'POST' }); // 토글
+            // backend: { liked: boolean }
+            if (res && res.liked === false || res === null) {
+                cardEl.remove();
+                state.pickClips = state.pickClips.filter(x=>x.id!==clipId);
+                if(state.pickClips.length===0) $('#picks').innerHTML = `<div class="ghost">아직 잔치픽이 없습니다.</div>`;
+                toast('잔치픽 해제 완료');
+            } else {
+                // 혹시 서버가 처음 '좋아요' 상태였다면 다시 토글
+                if (res && res.liked === true) {
+                    await getJson(`/api/clips/${clipId}/like`, { method: 'POST' });
+                    cardEl.remove();
+                    state.pickClips = state.pickClips.filter(x=>x.id!==clipId);
+                    toast('잔치픽 해제 완료');
+                }
+            }
+        }catch(e){ console.error(e); toast('잔치픽 해제 실패'); }
+    }
+
+    // ===== 내 클립 액션 =====
     async function editCaption(clip, capEl){
         const next = prompt('새 캡션을 입력하세요', (clip.caption||'').trim());
         if (next == null) return;
@@ -285,8 +406,8 @@
     }
 
     // ===== avatar upload =====
-    $('#avatarInput').addEventListener('change', async ()=>{
-        const f = $('#avatarInput').files[0]; if(!f) return;
+    document.getElementById('avatarInput').addEventListener('change', async ()=>{
+        const f = document.getElementById('avatarInput').files[0]; if(!f) return;
         const fd = new FormData(); fd.append('image', f);
         try{
             const json = await sendMultipart('/api/me/avatar', fd);
@@ -297,36 +418,42 @@
 
     // ===== tabs =====
     document.querySelectorAll('.tab').forEach(t=>{
-        t.addEventListener('click', ()=>{
+        t.addEventListener('click', async ()=>{
             document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
             t.classList.add('active');
             const key = t.dataset.tab;
             document.querySelectorAll('section.grid').forEach(s=>s.style.display='none');
             document.getElementById(key).style.display='grid';
-            if(key==='saved') toast('저장한 클립은 추후 API 연동 예정입니다.');
+
+            // 첫 진입 시 로딩
+            if (key==='saved' && !state.loaded.saved) await loadSaved();
+            if (key==='picks' && !state.loaded.picks) await loadPicks();
         });
     });
 
     // ===== share =====
-    $('#shareBtn').addEventListener('click', async ()=>{
+    document.getElementById('shareBtn').addEventListener('click', async ()=>{
         const url = location.origin + '/users/' + (state.me?.loginId || state.me?.id || '');
         try{ await navigator.clipboard.writeText(url); toast('프로필 링크가 복사되었습니다.'); }
         catch{ toast(url); }
     });
 
-    // ===== 팔로우 리스트 모달 =====
-    const dim = $('#dim');
-    const sheet = $('#followSheet');
-    const listBox = $('#followList');
-    const moreBtn = $('#sheetMore');
-    const titleEl = $('#sheetTitle');
+    // ===== 팔로우 리스트 모달 (+ 검색) =====
+    const dim = document.getElementById('dim');
+    const sheet = document.getElementById('followSheet');
+    const listBox = document.getElementById('followList');
+    const moreBtn = document.getElementById('sheetMore');
+    const titleEl = document.getElementById('sheetTitle');
+    const searchInput = document.getElementById('sheetSearch');
 
     function openSheet(mode){
         state.sheet.mode = mode;         // 'followers' | 'following'
         state.sheet.page = 0;
         state.sheet.totalPages = 1;
         state.sheet.userId = state.me?.id;
+        state.sheet.q = '';
         titleEl.textContent = mode === 'followers' ? '팔로워' : '팔로잉';
+        searchInput.value = '';
         listBox.innerHTML = '';
         moreBtn.style.display = 'none';
 
@@ -341,18 +468,23 @@
         sheet.classList.remove('show');
         sheet.setAttribute('aria-hidden','true');
     }
-    $('#sheetClose').addEventListener('click', closeSheet);
+    document.getElementById('sheetClose').addEventListener('click', closeSheet);
     dim.addEventListener('click', closeSheet);
 
     async function loadFollowPage(){
         if(state.sheet.loading) return;
-        const { userId, mode, page, size } = state.sheet;
+        const { userId, mode, page, size, q } = state.sheet;
         if(!userId) return;
         state.sheet.loading = true;
         try{
-            const data = await getJson(`/api/members/${userId}/${mode}?page=${page}&size=${size}`);
+            const qParam = q && q.trim() ? `&q=${encodeURIComponent(q.trim())}` : '';
+            const data = await getJson(`/api/members/${userId}/${mode}?page=${page}&size=${size}${qParam}`);
             const items = pickPage(data);
-            renderFollowItems(items);
+            if (page === 0 && items.length === 0) {
+                listBox.innerHTML = `<div class="empty">검색 결과가 없습니다.</div>`;
+            } else {
+                renderFollowItems(items);
+            }
             state.sheet.totalPages = (data?.totalPages ?? 1);
             // 다음 페이지 존재 여부
             if (state.sheet.page + 1 < state.sheet.totalPages) {
@@ -375,9 +507,12 @@
             const img = document.createElement('img'); img.className='pav';
             applyAvatar(m.avatarUrl, img);
 
-            const nm = document.createElement('div');
-            nm.className='pname';
+            const meta = document.createElement('div');
+            const nm = document.createElement('div'); nm.className='pname';
             nm.textContent = (m.name && m.name.trim()) ? m.name : (m.loginId || ('사용자#'+(m.id ?? '')));
+            const handle = document.createElement('div'); handle.className='phandle';
+            handle.textContent = m.loginId ? '@'+m.loginId : '';
+            meta.appendChild(nm); meta.appendChild(handle);
 
             const right = document.createElement('div'); right.className='pright';
             const viewBtn = document.createElement('button'); viewBtn.className='btn'; viewBtn.textContent='프로필';
@@ -387,7 +522,7 @@
 
             right.appendChild(viewBtn);
             row.appendChild(img);
-            row.appendChild(nm);
+            row.appendChild(meta);
             row.appendChild(right);
 
             frag.appendChild(row);
@@ -402,13 +537,36 @@
         }
     });
 
-    // 카운트 텍스트 클릭 → 모달 열기
-    $('#followersOpen').addEventListener('click', ()=> openSheet('followers'));
-    $('#followingOpen').addEventListener('click', ()=> openSheet('following'));
+    const doSearch = debounce(()=>{
+        state.sheet.page = 0;
+        state.sheet.totalPages = 1;
+        listBox.innerHTML = '';
+        loadFollowPage();
+    }, 300);
+    document.getElementById('sheetClear').addEventListener('click', ()=>{
+        state.sheet.q = '';
+        searchInput.value = '';
+        doSearch();
+        searchInput.focus();
+    });
+    document.getElementById('sheetSearch').addEventListener('input', (e)=>{
+        state.sheet.q = e.target.value || '';
+        doSearch();
+    });
 
-    // ===== boot =====
-    $('#refreshBtn').addEventListener('click', async ()=>{
-        try{ await loadSummary(); await loadMyClips(); toast('새로고침 완료'); }catch{ toast('불러오기 실패'); }
+    // 카운트 텍스트 클릭 → 모달 열기
+    document.getElementById('followersOpen').addEventListener('click', ()=> openSheet('followers'));
+    document.getElementById('followingOpen').addEventListener('click', ()=> openSheet('following'));
+
+    // ===== 새로고침 =====
+    document.getElementById('refreshBtn').addEventListener('click', async ()=>{
+        try{
+            await loadSummary();
+            await loadMyClips();
+            state.loaded.saved=false; state.loaded.picks=false;
+            $('#saved').innerHTML=''; $('#picks').innerHTML='';
+            toast('새로고침 완료');
+        }catch{ toast('불러오기 실패'); }
     });
 
     (async function boot(){

@@ -2,9 +2,12 @@ package com.zanchi.zanchi_backend.web.clip;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
+import com.zanchi.zanchi_backend.domain.clip.ClipSave;
 import com.zanchi.zanchi_backend.domain.clip.dto.*;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
+import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
 import com.zanchi.zanchi_backend.domain.clip.service.ClipService;
+import com.zanchi.zanchi_backend.domain.member.MemberRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -26,6 +29,7 @@ public class ClipController {
 
     private final ClipService clipService;
     private final ClipCommentRepository commentRepository;
+    private final MemberRepository memberRepository;
 
     // 1) 업로드 (multipart/form-data: video, caption)
     @PostMapping(path = "/api/clips", consumes = "multipart/form-data")
@@ -167,5 +171,63 @@ public class ClipController {
             @RequestParam(defaultValue = "50") int size) {
         var p = clipService.myClips(userId, PageRequest.of(page, size)).map(ClipFeedRes::of);
         return ResponseEntity.ok(p);
+    }
+    @GetMapping("/api/clips/search")
+    public ResponseEntity<Page<ClipFeedRes>> searchClips(
+            @RequestParam String q,
+            @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="20") int size) {
+        var p = clipService.searchClips(q, PageRequest.of(page, size)).map(ClipFeedRes::of);
+        return ResponseEntity.ok(p);
+    }
+
+    //------------------------------------저장
+
+    @PostMapping("/api/clips/{clipId}/save")
+    public ResponseEntity<SaveToggleRes> toggleSave(
+            @PathVariable Long clipId,
+            @AuthenticationPrincipal(expression="member.id") Long memberId) {
+        if (memberId == null) return ResponseEntity.status(401).build();
+        boolean saved = clipService.toggleSave(clipId, memberId);
+        return ResponseEntity.ok(new SaveToggleRes(saved));
+    }
+
+    // 내 저장한 클립 목록
+    @GetMapping("/api/me/saved")
+    public ResponseEntity<Page<ClipFeedRes>> mySaved(
+            @AuthenticationPrincipal(expression="member.id") Long meId,
+            @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="50") int size){
+        if (meId == null) return ResponseEntity.status(401).build();
+        var p = clipService.savedClips(meId, PageRequest.of(page, size))
+                .map(ClipFeedRes::of);
+        return ResponseEntity.ok(p);
+    }
+
+
+
+    //------------------------------------저장 끝
+
+    @GetMapping("/api/me/picks")
+    public ResponseEntity<Page<ClipFeedRes>> myPicks(
+            @AuthenticationPrincipal(expression="member.id") Long meId,
+            @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="50") int size){
+        if (meId == null) return ResponseEntity.status(401).build();
+        var p = clipService.pickClips(meId, PageRequest.of(page, size))
+                .map(ClipFeedRes::of);
+        return ResponseEntity.ok(p);
+    }
+
+    @DeleteMapping("/api/clips/{clipId}/save")
+    public ResponseEntity<?> unsave(@PathVariable Long clipId,
+                                    @AuthenticationPrincipal String loginId) {
+        if (loginId == null) {
+            return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
+        }
+        Long meId = memberRepository.findIdByLoginId(loginId)
+                .orElseThrow(() -> new IllegalStateException("user not found: " + loginId));
+        clipService.unsave(meId, clipId);
+        return ResponseEntity.noContent().build();
     }
 }

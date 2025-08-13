@@ -36,6 +36,8 @@
         .sheet.show{transform:translateX(-50%) translateY(0)}
         .sheet .head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #1b1b1b}
         .sheet .title{font-weight:800}
+        .sheet .sbox{display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid #1b1b1b}
+        .sheet .sbox input{flex:1;padding:8px 10px;border-radius:10px;border:1px solid #2a2a2a;background:#141414;color:#fff;outline:none}
         .sheet .list{overflow:auto;padding:6px 10px 12px}
         .person{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:10px}
         .person:hover{background:#151515}
@@ -50,8 +52,8 @@
             .card { background:#fff; border-color:#ececec; }
             .card .meta, .actions { border-color:#eee; }
             .btn { background:#fafafa; color:#111; border-color:#eaeaea; }
-            .toast { background:#111; color:#fff; }
             .sheet{background:#fff;border-color:#eaeaea}
+            .sheet .sbox input{background:#fff;border-color:#eaeaea;color:#111}
             .person:hover{background:#f7f7f8}
         }
     </style>
@@ -88,6 +90,11 @@
         <div class="title" id="sheetTitle">팔로워</div>
         <div style="margin-left:auto"></div>
         <button class="btn" id="sheetClose">닫기</button>
+    </div>
+    <!-- 검색박스 추가 -->
+    <div class="sbox">
+        <input id="sheetQuery" type="search" placeholder="이름 또는 아이디 검색…" />
+        <button class="btn" id="sheetClear">지우기</button>
     </div>
     <div class="list" id="followList"></div>
     <button class="btn loadmore" id="sheetMore" style="display:none">더 불러오기</button>
@@ -208,19 +215,16 @@
     async function loadClipsOfUser(){
         const feed = document.getElementById('feed'); feed.innerHTML='';
         try{
-            // 전용 API 시도
             let data, items;
             try{
                 data = await getJson(`/api/members/${encodeURIComponent(USER_ID)}/clips?page=0&size=50`);
                 items = pickPage(data);
             }catch{
-                // 폴백: 전체 피드에서 uploaderId로 필터
                 const all = await getJson(`/api/clips/feed?page=0&size=200`);
                 const list = Array.isArray(all) ? all : (all?.content||[]);
                 items = list.filter(x => String(x.uploaderId||'')===String(USER_ID));
             }
 
-            // 이름 보정 (클립 없을 때는 그대로 '사용자')
             if(items.length>0){
                 const name = resolveName(items[0]);
                 const nameEl=document.getElementById('name');
@@ -238,19 +242,23 @@
         }catch(e){ console.error(e); }
     }
 
-    // ===== 팔로우 리스트 모달 =====
+    // ===== 팔로우 리스트 모달 + 검색 =====
     const dim = document.getElementById('dim');
     const sheet = document.getElementById('followSheet');
     const listBox = document.getElementById('followList');
     const moreBtn = document.getElementById('sheetMore');
     const titleEl = document.getElementById('sheetTitle');
+    const qInput = document.getElementById('sheetQuery');
+    const qClear = document.getElementById('sheetClear');
 
-    const sheetState = { mode:'followers', page:0, size:20, totalPages:1, loading:false };
+    const sheetState = { mode:'followers', page:0, size:20, totalPages:1, loading:false, keyword:'' };
 
     function openSheet(mode){
         sheetState.mode = mode;
         sheetState.page = 0;
         sheetState.totalPages = 1;
+        sheetState.keyword = '';
+        qInput.value = '';
         listBox.innerHTML='';
         moreBtn.style.display='none';
         titleEl.textContent = mode==='followers'?'팔로워':'팔로잉';
@@ -273,7 +281,14 @@
         if(sheetState.loading) return;
         sheetState.loading = true;
         try{
-            const data = await getJson(`/api/members/${encodeURIComponent(USER_ID)}/${sheetState.mode}?page=${sheetState.page}&size=${sheetState.size}`);
+            const params = new URLSearchParams({
+                page: String(sheetState.page),
+                size: String(sheetState.size)
+            });
+            if (sheetState.keyword.trim()) params.set('q', sheetState.keyword.trim());
+
+            const url = `/api/members/${encodeURIComponent(USER_ID)}/${sheetState.mode}?` + params.toString();
+            const data = await getJson(url);
             const items = pickPage(data);
             renderFollowItems(items);
             sheetState.totalPages = (data?.totalPages ?? 1);
@@ -290,7 +305,6 @@
         arr.forEach(m=>{
             const row = document.createElement('div'); row.className='person';
             const img = document.createElement('img'); img.className='pav';
-            // MemberSummary에 avatarUrl이 있으면 노출됨(없으면 기본)
             if (m.avatarUrl) { img.src = m.avatarUrl; img.onerror=()=>img.src=DEFAULT_AVATAR_DATA; }
             else img.src = DEFAULT_AVATAR_DATA;
 
@@ -312,6 +326,28 @@
             sheetState.page += 1;
             loadFollowPage();
         }
+    });
+
+    // 검색 디바운스
+    function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+    const onQueryChange = debounce(()=>{
+        sheetState.page = 0;
+        listBox.innerHTML='';
+        loadFollowPage();
+    }, 250);
+
+    qInput.addEventListener('input', (e)=>{
+        sheetState.keyword = e.target.value || '';
+        onQueryChange();
+    });
+    qClear.addEventListener('click', ()=>{
+        if (!qInput.value) return;
+        qInput.value = '';
+        sheetState.keyword = '';
+        sheetState.page = 0;
+        listBox.innerHTML='';
+        loadFollowPage();
+        qInput.focus();
     });
 
     document.getElementById('followersOpen').addEventListener('click', ()=> openSheet('followers'));
