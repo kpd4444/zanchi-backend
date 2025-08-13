@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>ZANCHI 예매 테스트</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 900px; margin: 20px auto; }
+        section { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+        button { padding: 6px 10px; cursor: pointer; }
+        input, select { padding: 6px; }
+        pre { background: #f7f7f7; padding: 8px; overflow: auto; }
+    </style>
+</head>
+<body>
+<h1>예매 API 테스트</h1>
+
+<section>
+    <h2>1) 로그인</h2>
+    <div>
+        <label>loginId: <input id="loginId" value="test1" /></label>
+        <label>password: <input id="password" type="password" value="test1234!" /></label>
+        <button onclick="login()">로그인</button>
+    </div>
+    <div style="margin-top:8px">
+        <label>또는 수동 입력 토큰: <input id="tokenManual" style="width: 500px" placeholder="Bearer 토큰만 붙이기(접두사 제외)" /></label>
+        <button onclick="useManualToken()">토큰 적용</button>
+    </div>
+    <p>현재 토큰: <code id="tokenShort">-</code></p>
+    <pre id="loginOut"></pre>
+</section>
+
+<section>
+    <h2>2) 공연 목록/상세</h2>
+    <button onclick="fetchShows()">공연 목록 불러오기</button>
+    <ul id="showList"></ul>
+    <pre id="showsOut"></pre>
+</section>
+
+<section>
+    <h2>3) 예매</h2>
+    <label>showId: <input id="reserveShowId" type="number" /></label>
+    <label>수량:
+        <select id="reserveQty">
+            <option>1</option><option>2</option><option>3</option><option>4</option>
+        </select>
+    </label>
+    <label>pointUsed: <input id="reservePoint" type="number" value="0" /></label>
+    <button onclick="reserve()">예매하기</button>
+    <pre id="reserveOut"></pre>
+</section>
+
+<section>
+    <h2>4) 내 예매 / 취소</h2>
+    <button onclick="myReservations()">내 예매 불러오기</button>
+    <ul id="myResList"></ul>
+    <label>취소할 reservationId: <input id="cancelId" type="number" /></label>
+    <button onclick="cancelReservation()">취소</button>
+    <pre id="myResOut"></pre>
+</section>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+
+    function setToken(t) {
+        if (!t) return;
+        localStorage.setItem('token', t);
+        $('tokenShort').textContent = t.substring(0, 20) + '...';
+    }
+    function getAuthHeaders() {
+        const t = localStorage.getItem('token');
+        return t ? { 'Authorization': 'Bearer ' + t } : {};
+    }
+
+    async function login() {
+        const body = {
+            loginId: $('loginId').value,
+            password: $('password').value
+        };
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        $('loginOut').textContent = JSON.stringify(data, null, 2);
+
+        // 토큰 키 후보들(확실치 않음: 프로젝트 응답 구조에 맞게 필요시 수정)
+        const token = data.token || data.accessToken || data.jwt || data.data || '';
+        if (token) setToken(token);
+        else alert('응답에서 토큰을 찾지 못했어요. 위 입력칸에 직접 붙여넣어 주세요.');
+    }
+
+    function useManualToken() {
+        const t = $('tokenManual').value.trim();
+        if (!t) return alert('토큰을 입력하세요.');
+        setToken(t);
+    }
+
+    async function fetchShows() {
+        const res = await fetch('/api/shows');
+        const data = await res.json();
+        $('showsOut').textContent = JSON.stringify(data, null, 2);
+
+        const ul = $('showList');
+        ul.innerHTML = '';
+        (data.content || []).forEach(s => {
+            const li = document.createElement('li');
+            li.textContent = `#${s.showId} ${s.title} - ${s.price}원 (잔여 ${s.remainingQty})`;
+            li.onclick = () => { $('reserveShowId').value = s.showId; };
+            ul.appendChild(li);
+        });
+    }
+
+    async function reserve() {
+        const body = {
+            showId: Number($('reserveShowId').value),
+            quantity: Number($('reserveQty').value),
+            pointUsed: Number($('reservePoint').value)
+        };
+        if (!body.showId) return alert('showId를 선택하세요.');
+
+        const res = await fetch('/api/reservations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(body)
+        });
+        const text = await res.text();
+        $('reserveOut').textContent = `status=${res.status}\n` + text;
+    }
+
+    async function myReservations() {
+        const res = await fetch('/api/reservations/me', {
+            headers: { ...getAuthHeaders() }
+        });
+        const data = await res.json();
+        $('myResOut').textContent = JSON.stringify(data, null, 2);
+
+        const ul = $('myResList');
+        ul.innerHTML = '';
+        (data.content || []).forEach(r => {
+            const li = document.createElement('li');
+            li.textContent =
+                `#${r.reservationId} show=${r.showId} qty=${r.quantity} status=${r.status} total=${r.totalPrice}`;
+            li.onclick = () => { $('cancelId').value = r.reservationId; };
+            ul.appendChild(li);
+        });
+    }
+
+    async function cancelReservation() {
+        const id = Number($('cancelId').value);
+        if (!id) return alert('reservationId를 입력하세요.');
+        const res = await fetch(`/api/reservations/${id}/cancel`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders() }
+        });
+        const text = await res.text();
+        $('myResOut').textContent = `status=${res.status}\n` + text;
+    }
+</script>
+</body>
+</html>
