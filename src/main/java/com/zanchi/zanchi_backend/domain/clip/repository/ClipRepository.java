@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface ClipRepository extends JpaRepository<Clip,Long> {
 
+    long countByUploader_Id(Long uploaderId);
     @EntityGraph(attributePaths = {"uploader"})
     Page<Clip> findAllByOrderByIdDesc(Pageable pageable);
 
@@ -26,4 +27,7 @@ public interface ClipRepository extends JpaRepository<Clip,Long> {
     @Modifying
     @Query("update Clip c set c.viewCount = c.viewCount + 1 where c.id = :clipId")
     int incrementViewCount(@Param("clipId") Long clipId);
+
+    Page<Clip> findByUploader_IdOrderByIdDesc(Long uploaderId, Pageable pageable);
+
 }

@@ -17,6 +17,6 @@ public interface ClipCommentRepository extends JpaRepository<ClipComment,Long> {
 
 
 
-    // ✅ 최상위만
+
     Page<ClipComment> findByClipIdAndParentIsNullOrderByIdAsc(Long clipId, Pageable pageable);
 }

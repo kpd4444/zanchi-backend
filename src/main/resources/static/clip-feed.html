@@ -17,6 +17,9 @@
         .card .meta { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid #1b1b1b; }
         .avatar { width:34px; height:34px; border-radius:50%; background:#333; flex:0 0 auto; }
         .name { font-weight:700; font-size:14px; }
+        /* ⬇️ 작성자 링크 스타일 */
+        .name a { color:inherit; text-decoration:none; }
+        .name a:hover { text-decoration:underline; }
         .time { color:#a0a0a0; font-size:12px; }
         .caption { padding:10px 14px 0 14px; color:#e9e9e9; font-size:14px; line-height:1.45; }
         .video-box { position:relative; }
@@ -145,14 +148,27 @@
         return null;
     }
 
+    // ⬇️ 이름을 (링크 or 텍스트)로 넣어주는 헬퍼
+    function setName(el, clip) {
+        const display = resolveName(clip, null) ?? (clipAuthorFromCache(clip) ?? '작성자');
+        if (clip && clip.uploaderId != null) {
+            el.innerHTML = '';
+            const a = document.createElement('a');
+            a.href = `/user.html?userId=${encodeURIComponent(clip.uploaderId)}`;
+            a.textContent = display;
+            el.appendChild(a);
+        } else {
+            el.textContent = display;
+        }
+    }
+
     function refreshAuthorNames() {
         document.querySelectorAll('.card').forEach(card => {
             const clip = card._clip;
             if (!clip) return;
             const el = card.querySelector('.name');
             if (!el) return;
-            const direct = resolveName(clip, null);
-            el.textContent = direct ?? (clipAuthorFromCache(clip) ?? '작성자');
+            setName(el, clip);
         });
     }
 
@@ -218,9 +234,8 @@
 
         const name = document.createElement('div');
         name.className = 'name';
-        const direct = resolveName(c, null);
-        name.textContent = direct ?? (clipAuthorFromCache(c) ?? '작성자');
-        ensureMembersLoaded();
+        setName(name, c);        // ⬅️ 여기서 링크/텍스트 설정
+        ensureMembersLoaded();   // 캐시 로딩 후 refreshAuthorNames로 다시 반영
 
         const time = document.createElement('div');
         time.className = 'time';
@@ -338,7 +353,7 @@
             counts.dataset.likes = likes;
             counts.dataset.comments = comments;
             counts.textContent = `좋아요 ${likes} · 댓글 ${comments}`;
-            refreshAuthorNames();
+            refreshAuthorNames();  // 이름도 함께 갱신(링크 유지)
         } catch {}
     }
 

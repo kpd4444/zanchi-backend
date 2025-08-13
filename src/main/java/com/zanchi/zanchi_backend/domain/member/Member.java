@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
+@Setter
 @Entity
 @Table(
         name = "member",
@@ -32,4 +33,7 @@ public class Member {
     @Column(nullable = false, length = 20)
     @Builder.Default
     private String role = "ROLE_USER"; // MemberPrincipal의 권한 매핑에 필요
+
+    @Column(length = 255)
+    private String avatarUrl;
 }

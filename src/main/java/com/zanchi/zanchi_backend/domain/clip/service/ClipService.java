@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -165,5 +166,59 @@ public class ClipService {
     @Transactional(readOnly = true)
     public Page<ClipComment> getReplies(Long parentCommentId, Pageable pageable) {
         return commentRepository.findByParentIdOrderByIdAsc(parentCommentId, pageable);
+    }
+
+    @Transactional
+    public Clip updateCaption(Long clipId, Long memberId, String caption) {
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new AccessDeniedException("FORBIDDEN");
+        }
+        clip.setCaption(caption);
+        return clip;
+    }
+
+    @Transactional
+    public Clip replaceVideo(Long clipId, Long memberId, MultipartFile video, String caption) throws Exception {
+        if (video == null || video.isEmpty()) {
+            throw new IllegalArgumentException("video file is required");
+        }
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new AccessDeniedException("FORBIDDEN");
+        }
+
+        // 1) 새 파일 저장
+        String newUrl = storage.saveVideo(video);
+
+        // 2) 엔티티 갱신
+        String oldUrl = clip.getVideoUrl();
+        clip.setVideoUrl(newUrl);
+        if (caption != null) clip.setCaption(caption);
+
+        // 3) 기존 파일 정리(실패해도 서비스 실패로 만들지 않음)
+        try { storage.deleteByUrl(oldUrl); } catch (Exception ignore) {}
+
+        return clip;
+    }
+
+    @Transactional
+    public void deleteClip(Long clipId, Long memberId) {
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new AccessDeniedException("FORBIDDEN");
+        }
+        String url = clip.getVideoUrl();
+
+        // 댓글/좋아요는 Clip 엔티티의 orphanRemoval=true라 함께 삭제됨
+        clipRepository.delete(clip);
+
+        // 원본 파일 삭제(실패해도 무시)
+        try { storage.deleteByUrl(url); } catch (Exception ignore) {}
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Clip> myClips(Long memberId, Pageable pageable) {
+        return clipRepository.findByUploader_IdOrderByIdDesc(memberId, pageable);
     }
 }
