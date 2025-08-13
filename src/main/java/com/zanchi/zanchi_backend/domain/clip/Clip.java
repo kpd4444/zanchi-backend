@@ -63,7 +63,7 @@ public class Clip {
         this.likes.add(l);
     }
 
-    // equals/hashCode는 식별자만
+    // equals/hashCode 는 식별자만
     @Override public boolean equals(Object o){ return (this==o) || (o instanceof Clip c && id!=null && id.equals(c.id));}
     @Override public int hashCode(){ return 31; }
 }

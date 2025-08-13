@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <title>사용자 프로필</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root { color-scheme: dark light; }
+        *{ box-sizing: border-box; }
+        body { margin:0; font-family:-apple-system, system-ui, Segoe UI, Roboto, "Noto Sans KR", sans-serif; background:#0b0b0b; color:#f2f2f2; }
+        .wrap { max-width:680px; margin:0 auto; padding:16px; }
+        header { position:sticky; top:0; z-index:10; backdrop-filter:saturate(180%) blur(8px); background:rgba(0,0,0,.6); border-bottom:1px solid rgba(255,255,255,.08); }
+        header .bar { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; }
+        .title { font-weight:800; letter-spacing:.3px; }
+        .btn { padding:8px 12px; border:1px solid #2a2a2a; background:#1a1a1a; color:#fff; border-radius:10px; font-size:13px; cursor:pointer; }
+        .profile { display:flex; align-items:center; gap:12px; padding:16px; border-bottom:1px solid #222; }
+        .avatar { width:56px; height:56px; border-radius:50%; background:#333; object-fit:cover }
+        .name { font-size:18px; font-weight:800; }
+        .counts { color:#bdbdbd; font-size:13px; margin-top:4px; display:flex; gap:10px }
+        .counts .linklike{ cursor:pointer; opacity:.85 }
+        .counts .linklike:hover{ opacity:1; text-decoration:underline }
+
+        .feed { display:flex; flex-direction:column; gap:16px; padding:16px; }
+        .card { background:#111; border:1px solid #222; border-radius:14px; overflow:hidden; }
+        .card .meta { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid #1b1b1b; }
+        .time { color:#a0a0a0; font-size:12px; }
+        .caption { padding:10px 14px 0 14px; color:#e9e9e9; font-size:14px; line-height:1.45; }
+        .video-box { position:relative; }
+        video { width:100%; display:block; background:#000; max-height:70vh; }
+        .actions { display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid #1b1b1b; }
+
+        /* ===== 팔로우 리스트 모달(하단 시트) ===== */
+        .dim{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.2s;z-index:30}
+        .dim.show{opacity:1;pointer-events:auto}
+        .sheet{position:fixed;left:50%;transform:translateX(-50%) translateY(100%);bottom:0;width:min(760px,100vw);max-height:72vh;background:#111;border:1px solid #222;border-radius:16px 16px 0 0;box-shadow:0 -10px 24px rgba(0,0,0,.35);transition:.25s;z-index:31;display:flex;flex-direction:column}
+        .sheet.show{transform:translateX(-50%) translateY(0)}
+        .sheet .head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #1b1b1b}
+        .sheet .title{font-weight:800}
+        .sheet .sbox{display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid #1b1b1b}
+        .sheet .sbox input{flex:1;padding:8px 10px;border-radius:10px;border:1px solid #2a2a2a;background:#141414;color:#fff;outline:none}
+        .sheet .list{overflow:auto;padding:6px 10px 12px}
+        .person{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:10px}
+        .person:hover{background:#151515}
+        .pav{width:40px;height:40px;border-radius:50%;background:#333;flex:0 0 auto;object-fit:cover}
+        .pname{font-weight:700}
+        .pright{margin-left:auto;display:flex;gap:6px}
+        .loadmore{margin:8px auto 14px}
+
+        @media (prefers-color-scheme: light) {
+            body { background:#f7f7f8; color:#111; }
+            header { background:rgba(255,255,255,.7); border-color:rgba(0,0,0,.06); }
+            .card { background:#fff; border-color:#ececec; }
+            .card .meta, .actions { border-color:#eee; }
+            .btn { background:#fafafa; color:#111; border-color:#eaeaea; }
+            .sheet{background:#fff;border-color:#eaeaea}
+            .sheet .sbox input{background:#fff;border-color:#eaeaea;color:#111}
+            .person:hover{background:#f7f7f8}
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="bar wrap">
+        <div class="title">프로필</div>
+        <button class="btn" onclick="history.back()">뒤로</button>
+    </div>
+</header>
+
+<main class="wrap">
+    <section class="profile">
+        <img class="avatar" id="avatar" alt="avatar">
+        <div>
+            <div class="name" id="name">사용자</div>
+            <div class="counts">
+                <div class="linklike" id="followersOpen">팔로워 <span id="followerCount">0</span></div>
+                <div class="linklike" id="followingOpen">· 팔로잉 <span id="followingCount">0</span></div>
+            </div>
+        </div>
+        <div style="margin-left:auto"></div>
+        <button id="followBtn" class="btn">팔로우</button>
+    </section>
+
+    <section class="feed" id="feed"></section>
+</main>
+
+<!-- 팔로우 리스트 모달 -->
+<div class="dim" id="dim"></div>
+<section class="sheet" id="followSheet" aria-hidden="true">
+    <div class="head">
+        <div class="title" id="sheetTitle">팔로워</div>
+        <div style="margin-left:auto"></div>
+        <button class="btn" id="sheetClose">닫기</button>
+    </div>
+    <!-- 검색박스 추가 -->
+    <div class="sbox">
+        <input id="sheetQuery" type="search" placeholder="이름 또는 아이디 검색…" />
+        <button class="btn" id="sheetClear">지우기</button>
+    </div>
+    <div class="list" id="followList"></div>
+    <button class="btn loadmore" id="sheetMore" style="display:none">더 불러오기</button>
+</section>
+
+<div class="toast" id="toast" style="display:none"></div>
+
+<script>
+    // ===== Token & util =====
+    function getToken() {
+        const t = localStorage.getItem('token') || localStorage.getItem('jwt');
+        if (!t) return null;
+        return t.startsWith('Bearer ') ? t : `Bearer ${t}`;
+    }
+    const Q = new URLSearchParams(location.search);
+    const USER_ID = Q.get('userId');
+
+    function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',1400);}
+
+    // 안전한 getJson (204/비-JSON 대응)
+    async function getJson(url,opt={}){
+        const headers=opt.headers?{...opt.headers}:{};
+        const hasBody = opt.body !== undefined && opt.body !== null;
+        const isForm  = typeof FormData !== 'undefined' && opt.body instanceof FormData;
+        if(!headers['Content-Type']&&opt.method&&opt.method!=='GET'&&hasBody&&!isForm) headers['Content-Type']='application/json';
+        const tk=getToken(); if(tk) headers['Authorization']=tk;
+        const res=await fetch(url,{...opt,headers});
+        if(!res.ok){throw new Error(await res.text().catch(()=>''));}
+        if(res.status===204) return null;
+        const ct = res.headers.get('Content-Type')||'';
+        if(ct.includes('application/json')) return res.json();
+        return res.text().catch(()=>null);
+    }
+    const pickPage = (x)=> Array.isArray(x)?x:(x && Array.isArray(x.content)?x.content:[]);
+
+    // 기본 아바타
+    const DEFAULT_AVATAR_DATA =
+        'data:image/svg+xml;utf8,'+
+        encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4b5563"/><stop offset="1" stop-color="#1f2937"/>
+      </linearGradient></defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      <circle cx="56" cy="42" r="20" fill="#9ca3af"/>
+      <rect x="20" y="70" width="72" height="28" rx="14" fill="#9ca3af"/>
+    </svg>`);
+    function applyAvatar(url, el=document.getElementById('avatar')){
+        el.onerror=null;
+        if(!url){ el.src = DEFAULT_AVATAR_DATA; return; }
+        el.onerror=()=>{ el.onerror=null; el.src=DEFAULT_AVATAR_DATA; };
+        el.src=url;
+    }
+
+    // ===== Profile header =====
+    async function loadCounts(){
+        try{
+            const d = await getJson(`/api/members/${encodeURIComponent(USER_ID)}/follow-counts`);
+            document.getElementById('followerCount').textContent = d.followers ?? 0;
+            document.getElementById('followingCount').textContent = d.following ?? 0;
+        }catch(e){ console.warn(e); }
+    }
+    async function loadRelation(){
+        try{
+            const d = await getJson(`/api/members/${encodeURIComponent(USER_ID)}/relation`);
+            setFollowBtn(!!d.following);
+        }catch(e){ setFollowBtn(false); }
+    }
+    function setFollowBtn(following){
+        const b=document.getElementById('followBtn');
+        b.dataset.following = following ? '1':'0';
+        b.textContent = following ? '언팔로우' : '팔로우';
+    }
+    async function toggleFollow(){
+        const following = document.getElementById('followBtn').dataset.following === '1';
+        try{
+            if(following){
+                await getJson(`/api/members/${encodeURIComponent(USER_ID)}/follow`, {method:'DELETE'});
+                toast('언팔로우 했어요'); setFollowBtn(false);
+            }else{
+                await getJson(`/api/members/${encodeURIComponent(USER_ID)}/follow`, {method:'POST'});
+                toast('팔로우 했어요'); setFollowBtn(true);
+            }
+            await loadCounts();
+        }catch(e){ console.error(e); toast('실패했어요'); }
+    }
+    document.getElementById('followBtn').addEventListener('click', toggleFollow);
+
+    // ===== Clips of the user (전용 API 우선, 없으면 feed 필터 폴백) =====
+    function resolveName(obj){
+        const cands=['authorName','memberName','username','name','loginId'];
+        for(const k of cands){const v=obj?.[k]; if(typeof v==='string'&&v.trim()) return v.trim();}
+        return '사용자';
+    }
+    function fmtTime(s){ try{return s?new Date(s).toLocaleString():'';}catch{return '';} }
+
+    function buildCard(c){
+        const wrap=document.createElement('article'); wrap.className='card';
+        const meta=document.createElement('div'); meta.className='meta';
+        const nm=document.createElement('div'); nm.style.fontWeight='700'; nm.textContent=resolveName(c);
+        const tm=document.createElement('div'); tm.className='time'; tm.style.marginLeft='auto'; tm.textContent=fmtTime(c.createdAt);
+        meta.appendChild(nm); meta.appendChild(tm);
+
+        const cap=document.createElement('div'); cap.className='caption'; cap.textContent=c.caption||'';
+        const vb=document.createElement('div'); vb.className='video-box';
+        const v=document.createElement('video'); v.controls=true; v.playsInline=true; v.src=c.videoUrl||''; vb.appendChild(v);
+
+        const acts=document.createElement('div'); acts.className='actions';
+        const cnt=document.createElement('div'); cnt.style.marginLeft='auto'; cnt.style.color='#bdbdbd';
+        const likes=c.likeCount ?? (Array.isArray(c.likes)?c.likes.length:0);
+        const comments=c.commentCount ?? (Array.isArray(c.comments)?c.comments.length:0);
+        cnt.textContent=`좋아요 ${likes} · 댓글 ${comments}`;
+        acts.appendChild(cnt);
+
+        wrap.appendChild(meta); wrap.appendChild(cap); wrap.appendChild(vb); wrap.appendChild(acts);
+        return wrap;
+    }
+
+    async function loadClipsOfUser(){
+        const feed = document.getElementById('feed'); feed.innerHTML='';
+        try{
+            let data, items;
+            try{
+                data = await getJson(`/api/members/${encodeURIComponent(USER_ID)}/clips?page=0&size=50`);
+                items = pickPage(data);
+            }catch{
+                const all = await getJson(`/api/clips/feed?page=0&size=200`);
+                const list = Array.isArray(all) ? all : (all?.content||[]);
+                items = list.filter(x => String(x.uploaderId||'')===String(USER_ID));
+            }
+
+            if(items.length>0){
+                const name = resolveName(items[0]);
+                const nameEl=document.getElementById('name');
+                if(nameEl.textContent==='사용자') nameEl.textContent=name;
+            }
+
+            if(items.length===0){
+                const p=document.createElement('div'); p.style.color='#bdbdbd'; p.textContent='아직 게시물이 없습니다.';
+                feed.appendChild(p);
+            }else{
+                const frag=document.createDocumentFragment();
+                items.forEach(c=>frag.appendChild(buildCard(c)));
+                feed.appendChild(frag);
+            }
+        }catch(e){ console.error(e); }
+    }
+
+    // ===== 팔로우 리스트 모달 + 검색 =====
+    const dim = document.getElementById('dim');
+    const sheet = document.getElementById('followSheet');
+    const listBox = document.getElementById('followList');
+    const moreBtn = document.getElementById('sheetMore');
+    const titleEl = document.getElementById('sheetTitle');
+    const qInput = document.getElementById('sheetQuery');
+    const qClear = document.getElementById('sheetClear');
+
+    const sheetState = { mode:'followers', page:0, size:20, totalPages:1, loading:false, keyword:'' };
+
+    function openSheet(mode){
+        sheetState.mode = mode;
+        sheetState.page = 0;
+        sheetState.totalPages = 1;
+        sheetState.keyword = '';
+        qInput.value = '';
+        listBox.innerHTML='';
+        moreBtn.style.display='none';
+        titleEl.textContent = mode==='followers'?'팔로워':'팔로잉';
+
+        dim.classList.add('show');
+        sheet.classList.add('show');
+        sheet.setAttribute('aria-hidden','false');
+
+        loadFollowPage();
+    }
+    function closeSheet(){
+        dim.classList.remove('show');
+        sheet.classList.remove('show');
+        sheet.setAttribute('aria-hidden','true');
+    }
+    document.getElementById('sheetClose').addEventListener('click', closeSheet);
+    dim.addEventListener('click', closeSheet);
+
+    async function loadFollowPage(){
+        if(sheetState.loading) return;
+        sheetState.loading = true;
+        try{
+            const params = new URLSearchParams({
+                page: String(sheetState.page),
+                size: String(sheetState.size)
+            });
+            if (sheetState.keyword.trim()) params.set('q', sheetState.keyword.trim());
+
+            const url = `/api/members/${encodeURIComponent(USER_ID)}/${sheetState.mode}?` + params.toString();
+            const data = await getJson(url);
+            const items = pickPage(data);
+            renderFollowItems(items);
+            sheetState.totalPages = (data?.totalPages ?? 1);
+            if (sheetState.page + 1 < sheetState.totalPages) moreBtn.style.display='inline-block';
+            else moreBtn.style.display='none';
+        }catch(e){
+            console.error(e); toast('목록을 불러오지 못했습니다.');
+        }finally{
+            sheetState.loading = false;
+        }
+    }
+    function renderFollowItems(arr){
+        const frag = document.createDocumentFragment();
+        arr.forEach(m=>{
+            const row = document.createElement('div'); row.className='person';
+            const img = document.createElement('img'); img.className='pav';
+            if (m.avatarUrl) { img.src = m.avatarUrl; img.onerror=()=>img.src=DEFAULT_AVATAR_DATA; }
+            else img.src = DEFAULT_AVATAR_DATA;
+
+            const nm = document.createElement('div'); nm.className='pname';
+            nm.textContent = (m.name && m.name.trim()) ? m.name : (m.loginId || ('사용자#'+(m.id ?? '')));
+
+            const right = document.createElement('div'); right.className='pright';
+            const viewBtn = document.createElement('button'); viewBtn.className='btn'; viewBtn.textContent='프로필';
+            viewBtn.addEventListener('click', ()=> location.href=`/user.html?userId=${encodeURIComponent(m.id)}`);
+
+            right.appendChild(viewBtn);
+            row.appendChild(img); row.appendChild(nm); row.appendChild(right);
+            frag.appendChild(row);
+        });
+        listBox.appendChild(frag);
+    }
+    moreBtn.addEventListener('click', ()=>{
+        if (sheetState.page + 1 < sheetState.totalPages) {
+            sheetState.page += 1;
+            loadFollowPage();
+        }
+    });
+
+    // 검색 디바운스
+    function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+    const onQueryChange = debounce(()=>{
+        sheetState.page = 0;
+        listBox.innerHTML='';
+        loadFollowPage();
+    }, 250);
+
+    qInput.addEventListener('input', (e)=>{
+        sheetState.keyword = e.target.value || '';
+        onQueryChange();
+    });
+    qClear.addEventListener('click', ()=>{
+        if (!qInput.value) return;
+        qInput.value = '';
+        sheetState.keyword = '';
+        sheetState.page = 0;
+        listBox.innerHTML='';
+        loadFollowPage();
+        qInput.focus();
+    });
+
+    document.getElementById('followersOpen').addEventListener('click', ()=> openSheet('followers'));
+    document.getElementById('followingOpen').addEventListener('click', ()=> openSheet('following'));
+
+    // ===== Boot =====
+    (async function boot(){
+        if(!USER_ID){ alert('userId가 없습니다.'); return; }
+        applyAvatar(null); // 기본아바타 먼저
+        await Promise.all([loadCounts(), loadRelation(), loadClipsOfUser()]);
+    })();
+</script>
+</body>
+</html>

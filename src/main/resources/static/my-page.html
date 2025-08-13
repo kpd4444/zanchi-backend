@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <title>마이페이지</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root{color-scheme:dark light}
+        *{box-sizing:border-box}
+        body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:#0b0b0b;color:#f2f2f2}
+        .wrap{max-width:760px;margin:0 auto}
+        header{position:sticky;top:0;z-index:5;background:rgba(0,0,0,.6);backdrop-filter:saturate(180%) blur(8px);border-bottom:1px solid rgba(255,255,255,.08)}
+        header .bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
+        .title{font-weight:800}
+        .profile{padding:16px}
+        .top{display:flex;gap:16px;align-items:center}
+        .avatar{width:80px;height:80px;border-radius:50%;background:#333;flex:0 0 auto;object-fit:cover}
+        .name{font-weight:800;font-size:18px}
+        .meta{display:flex;gap:18px;margin:10px 0}
+        .meta .n{font-weight:800}
+        .meta .linklike{cursor:pointer;opacity:.85}
+        .meta .linklike:hover{opacity:1;text-decoration:underline}
+        .btns{display:flex;gap:10px;margin-top:8px}
+        .btn{padding:8px 12px;border:1px solid #2a2a2a;background:#1a1a1a;color:#fff;border-radius:10px;font-size:13px;cursor:pointer}
+        .tabs{display:flex;gap:16px;border-bottom:1px solid #1b1b1b;padding:0 16px}
+        .tab{padding:12px 2px;cursor:pointer}
+        .tab.active{font-weight:800;border-bottom:2px solid #8b5cf6}
+        .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;padding:16px}
+        .card{background:#111;border:1px solid #222;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+        .thumb{width:100%;aspect-ratio:16/9;background:#000;object-fit:cover}
+        .cap{padding:10px 12px;font-size:14px}
+        .row{display:flex;gap:8px;align-items:center;padding:10px 12px;margin-top:auto;border-top:1px solid #1b1b1b}
+        .ghost{opacity:.6}
+        .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:#222;color:#fff;padding:10px 14px;border-radius:10px;border:1px solid #333;font-size:13px;z-index:9999}
+        input[type=file]{display:none}
+
+        /* ===== 팔로우 리스트 모달(하단 시트) ===== */
+        .dim{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.2s;z-index:30}
+        .dim.show{opacity:1;pointer-events:auto}
+        .sheet{position:fixed;left:50%;transform:translateX(-50%) translateY(100%);bottom:0;width:min(760px,100vw);max-height:72vh;background:#111;border:1px solid #222;border-radius:16px 16px 0 0;box-shadow:0 -10px 24px rgba(0,0,0,.35);transition:.25s;z-index:31;display:flex;flex-direction:column}
+        .sheet.show{transform:translateX(-50%) translateY(0)}
+        .sheet .head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #1b1b1b}
+        .sheet .title{font-weight:800}
+        .sheet .head .search{display:flex;gap:8px;margin-left:auto;align-items:center}
+        .sheet .head input[type=search]{width:220px;max-width:48vw;padding:8px 10px;border-radius:10px;border:1px solid #2a2a2a;background:#141414;color:#fff;outline:none;font-size:13px}
+        .sheet .list{overflow:auto;padding:6px 10px 12px}
+        .person{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:10px}
+        .person:hover{background:#151515}
+        .pav{width:40px;height:40px;border-radius:50%;background:#333;flex:0 0 auto;object-fit:cover}
+        .pname{font-weight:700}
+        .phandle{font-size:12px;color:#bdbdbd}
+        .pright{margin-left:auto;display:flex;gap:6px}
+        .loadmore{margin:8px auto 14px}
+        .empty{padding:18px 8px;color:#bdbdbd}
+
+        @media (prefers-color-scheme:light){
+            body{background:#f7f7f8;color:#111}
+            header{background:rgba(255,255,255,.7);border-color:rgba(0,0,0,.06)}
+            .card{background:#fff;border-color:#ececec}
+            .row{border-color:#eee}
+            .btn{background:#fafafa;color:#111;border-color:#eaeaea}
+            .sheet{background:#fff;border-color:#eaeaea}
+            .sheet .head input[type=search]{background:#fff;color:#111;border-color:#eaeaea}
+            .person:hover{background:#f7f7f8}
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="bar wrap">
+        <div class="title">마이페이지</div>
+        <button id="refreshBtn" class="btn">새로고침</button>
+    </div>
+</header>
+
+<main class="wrap">
+    <section class="profile">
+        <div class="top">
+            <img id="avatar" class="avatar" alt="avatar">
+            <div>
+                <div id="displayName" class="name">-</div>
+                <div class="meta">
+                    <div><span class="n" id="postCount">0</span> 게시물</div>
+                    <div class="linklike" id="followersOpen"><span class="n" id="followerCount">0</span> 팔로워</div>
+                    <div class="linklike" id="followingOpen"><span class="n" id="followingCount">0</span> 팔로잉</div>
+                </div>
+                <div class="btns">
+                    <label class="btn" for="avatarInput">프로필 편집(아바타)</label>
+                    <button class="btn" id="shareBtn">프로필 공유</button>
+                </div>
+            </div>
+        </div>
+        <input id="avatarInput" type="file" accept="image/*">
+    </section>
+
+    <nav class="tabs">
+        <div class="tab active" data-tab="mine">내 클립</div>
+        <div class="tab" data-tab="saved">저장한 클립</div>
+        <div class="tab" data-tab="picks">나의 잔치픽</div>
+    </nav>
+
+    <section id="mine"  class="grid"></section>
+    <section id="saved" class="grid" style="display:none"></section>
+    <section id="picks" class="grid" style="display:none"></section>
+</main>
+
+<!-- ===== 팔로우 리스트 모달 ===== -->
+<div class="dim" id="dim"></div>
+<section class="sheet" id="followSheet" aria-hidden="true">
+    <div class="head">
+        <div class="title" id="sheetTitle">팔로워</div>
+        <div class="search">
+            <input id="sheetSearch" type="search" placeholder="이름/아이디 검색" />
+            <button id="sheetClear" class="btn">지우기</button>
+            <button class="btn" id="sheetClose">닫기</button>
+        </div>
+    </div>
+    <div class="list" id="followList"></div>
+    <button class="btn loadmore" id="sheetMore" style="display:none">더 불러오기</button>
+</section>
+
+<div class="toast" id="toast" style="display:none"></div>
+
+<script>
+    // ===== 기본 아바타 (내장 SVG 데이터) =====
+    const DEFAULT_AVATAR_DATA =
+        'data:image/svg+xml;utf8,' +
+        encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4b5563"/><stop offset="1" stop-color="#1f2937"/>
+      </linearGradient></defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      <circle cx="80" cy="60" r="32" fill="#9ca3af"/>
+      <rect x="28" y="100" width="104" height="44" rx="22" fill="#9ca3af"/>
+    </svg>`);
+
+    function applyAvatar(url, imgEl){
+        const img = imgEl || document.getElementById('avatar');
+        img.onerror = null;
+        if (!url) { img.src = DEFAULT_AVATAR_DATA; return; }
+        img.onerror = () => { img.onerror = null; img.src = DEFAULT_AVATAR_DATA; };
+        img.src = url;
+    }
+
+    // ===== token =====
+    function getToken(){
+        const t = localStorage.getItem('jwt') || localStorage.getItem('token');
+        if (!t) return null;
+        return t.startsWith('Bearer ') ? t : `Bearer ${t}`;
+    }
+
+    // ===== helpers =====
+    const $ = s => document.querySelector(s);
+    function toast(msg){
+        const t = $('#toast');
+        t.textContent = msg;
+        t.style.display = 'block';
+        setTimeout(()=> t.style.display = 'none', 1500);
+    }
+    const pickPage = (x)=> Array.isArray(x)?x : (x && Array.isArray(x.content)? x.content : []);
+    const read = (o,p)=> p.split('.').reduce((a,k)=>a&&a[k]!=null?a[k]:undefined,o);
+    function uploaderIdOf(clip){
+        return clip.uploaderId
+            ?? clip.memberId ?? clip.authorId
+            ?? read(clip,'uploader.id') ?? read(clip,'author.id') ?? read(clip,'member.id');
+    }
+    const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
+
+    // === getJson (FormData 자동헤더 방지 + 204/비json 안전) ===
+    async function getJson(url, opt = {}) {
+        const headers = opt.headers ? { ...opt.headers } : {};
+        const hasBody = opt.body !== undefined && opt.body !== null;
+        const isForm = typeof FormData !== 'undefined' && opt.body instanceof FormData;
+        if (!headers['Content-Type'] && opt.method && opt.method !== 'GET' && hasBody && !isForm) {
+            headers['Content-Type'] = 'application/json';
+        }
+        const token = getToken();
+        if (token) headers['Authorization'] = token;
+
+        const res = await fetch(url, { ...opt, headers });
+        if (!res.ok) {
+            const txt = await res.text().catch(()=> '');
+            throw new Error(txt || `HTTP ${res.status}`);
+        }
+        if (res.status === 204) return null;
+
+        const ct = res.headers.get('Content-Type') || '';
+        if (ct.includes('application/json')) return res.json();
+        return res.text().catch(()=>null);
+    }
+
+    async function sendMultipart(url, formData){
+        const headers = {};
+        const tok = getToken(); if (tok) headers['Authorization']=tok;
+        const res = await fetch(url, { method:'POST', headers, body: formData });
+        if(!res.ok){ const txt=await res.text().catch(()=> ''); throw new Error(txt||('HTTP '+res.status)); }
+        const ct = res.headers.get('Content-Type') || '';
+        if (ct.includes('application/json')) return res.json();
+        return null;
+    }
+
+    // ===== state =====
+    const state = {
+        me:null,
+        myClips:[],
+        savedClips:[],
+        pickClips:[],
+        loaded: { saved:false, picks:false },
+        sheet: {
+            mode: 'followers', // 'followers' | 'following'
+            page: 0,
+            size: 20,
+            totalPages: 1,
+            userId: null,
+            loading: false,
+            q: ''
+        }
+    };
+
+    // ===== profile summary =====
+    async function loadSummary(){
+        const me = await getJson('/api/me/summary');
+        state.me = me;
+        $('#displayName').textContent = me.name || me.loginId || '나';
+        applyAvatar(me.avatarUrl);
+
+        const counts = await getJson(`/api/members/${me.id}/follow-counts`);
+        $('#followerCount').textContent = counts.followers ?? 0;
+        $('#followingCount').textContent = counts.following ?? 0;
+    }
+
+    // ===== my clips =====
+    async function fetchMyClips(){
+        try {
+            const page = await getJson('/api/me/clips?page=0&size=50');
+            return pickPage(page);
+        } catch {
+            const page = await getJson('/api/clips/feed?page=0&size=200');
+            const all = pickPage(page);
+            return all.filter(c => String(uploaderIdOf(c)) === String(state.me.id));
+        }
+    }
+
+    async function loadMyClips(){
+        const mine = await fetchMyClips();
+        state.myClips = mine;
+        $('#postCount').textContent = mine.length;
+        renderMine(mine);
+    }
+
+    function buildMineCard(c){
+        const card = document.createElement('article'); card.className='card'; card.dataset.id=c.id;
+
+        const v = document.createElement('video');
+        v.className='thumb'; v.src = c.videoUrl || ''; v.controls = true; v.playsInline = true;
+        card.appendChild(v);
+
+        const cap = document.createElement('div'); cap.className='cap'; cap.textContent = c.caption || '';
+        card.appendChild(cap);
+
+        const row = document.createElement('div'); row.className='row';
+        const edit = document.createElement('button'); edit.className='btn'; edit.textContent='편집';
+        const del  = document.createElement('button'); del.className='btn'; del.textContent='삭제';
+
+        edit.addEventListener('click', ()=> editCaption(c, cap));
+        del.addEventListener('click', ()=> deleteClip(c, card));
+
+        row.appendChild(edit); row.appendChild(del);
+        row.appendChild(Object.assign(document.createElement('div'), {className:'ghost', textContent:`♥ ${c.likeCount??0} · 💬 ${c.commentCount??0}`}));
+        card.appendChild(row);
+        return card;
+    }
+
+    function renderMine(list){
+        const box = $('#mine'); box.innerHTML='';
+        if(list.length===0){ box.innerHTML = `<div class="ghost">아직 게시물이 없습니다.</div>`; return; }
+        const frag = document.createDocumentFragment();
+        list.forEach(c=> frag.appendChild(buildMineCard(c)));
+        box.appendChild(frag);
+    }
+
+    // ===== 저장한 클립 =====
+    async function loadSaved(){
+        try{
+            const page = await getJson('/api/me/saved?page=0&size=50');
+            const list = pickPage(page);
+            state.savedClips = list;
+            renderSaved(list);
+            state.loaded.saved = true;
+        }catch(e){ console.error(e); $('#saved').innerHTML = `<div class="ghost">저장한 클립 API를 불러오지 못했습니다.</div>`; }
+    }
+    function renderSaved(list){
+        const box = $('#saved'); box.innerHTML='';
+        if(list.length===0){ box.innerHTML = `<div class="ghost">저장한 클립이 없습니다.</div>`; return; }
+        const frag = document.createDocumentFragment();
+        list.forEach(c=>{
+            const card = document.createElement('article'); card.className='card'; card.dataset.id=c.id;
+
+            const v = document.createElement('video');
+            v.className='thumb'; v.src = c.videoUrl || ''; v.controls = true; v.playsInline = true;
+            card.appendChild(v);
+
+            const cap = document.createElement('div'); cap.className='cap'; cap.textContent = c.caption || '';
+            card.appendChild(cap);
+
+            const row = document.createElement('div'); row.className='row';
+            const unsave = document.createElement('button'); unsave.className='btn'; unsave.textContent='저장 해제';
+            unsave.addEventListener('click', ()=> unsaveClip(c.id, card));
+
+            row.appendChild(unsave);
+            row.appendChild(Object.assign(document.createElement('div'), {className:'ghost', textContent:`♥ ${c.likeCount??0} · 💬 ${c.commentCount??0}`}));
+            card.appendChild(row);
+
+            frag.appendChild(card);
+        });
+        box.appendChild(frag);
+    }
+    async function unsaveClip(clipId, cardEl){
+        try{
+            // 우선 DELETE 시도, 실패하면 POST 토글로 폴백
+            await getJson(`/api/clips/${clipId}/save`, { method: 'DELETE' })
+                .catch(()=> getJson(`/api/clips/${clipId}/save`, { method: 'POST' }));
+            cardEl.remove();
+            state.savedClips = state.savedClips.filter(x=>x.id!==clipId);
+            toast('저장 해제 완료');
+            if(state.savedClips.length===0) $('#saved').innerHTML = `<div class="ghost">저장한 클립이 없습니다.</div>`;
+        }catch(e){ console.error(e); toast('저장 해제 실패'); }
+    }
+
+    // ===== 나의 잔치픽(좋아요) =====
+    async function loadPicks(){
+        try{
+            const page = await getJson('/api/me/picks?page=0&size=50');
+            const list = pickPage(page);
+            state.pickClips = list;
+            renderPicks(list);
+            state.loaded.picks = true;
+        }catch(e){ console.error(e); $('#picks').innerHTML = `<div class="ghost">잔치픽 API를 불러오지 못했습니다.</div>`; }
+    }
+    function renderPicks(list){
+        const box = $('#picks'); box.innerHTML='';
+        if(list.length===0){ box.innerHTML = `<div class="ghost">아직 잔치픽이 없습니다. 마음에 드는 클립에 좋아요를 눌러보세요.</div>`; return; }
+        const frag = document.createDocumentFragment();
+        list.forEach(c=>{
+            const card = document.createElement('article'); card.className='card'; card.dataset.id=c.id;
+
+            const v = document.createElement('video');
+            v.className='thumb'; v.src = c.videoUrl || ''; v.controls = true; v.playsInline = true;
+            card.appendChild(v);
+
+            const cap = document.createElement('div'); cap.className='cap'; cap.textContent = c.caption || '';
+            card.appendChild(cap);
+
+            const row = document.createElement('div'); row.className='row';
+            const unpick = document.createElement('button'); unpick.className='btn'; unpick.textContent='잔치픽 해제';
+            unpick.addEventListener('click', ()=> unpickClip(c.id, card));
+
+            row.appendChild(unpick);
+            row.appendChild(Object.assign(document.createElement('div'), {className:'ghost', textContent:`♥ ${c.likeCount??0} · 💬 ${c.commentCount??0}`}));
+            card.appendChild(row);
+
+            frag.appendChild(card);
+        });
+        box.appendChild(frag);
+    }
+    async function unpickClip(clipId, cardEl){
+        try{
+            const res = await getJson(`/api/clips/${clipId}/like`, { method: 'POST' }); // 토글
+            // backend: { liked: boolean }
+            if (res && res.liked === false || res === null) {
+                cardEl.remove();
+                state.pickClips = state.pickClips.filter(x=>x.id!==clipId);
+                if(state.pickClips.length===0) $('#picks').innerHTML = `<div class="ghost">아직 잔치픽이 없습니다.</div>`;
+                toast('잔치픽 해제 완료');
+            } else {
+                // 혹시 서버가 처음 '좋아요' 상태였다면 다시 토글
+                if (res && res.liked === true) {
+                    await getJson(`/api/clips/${clipId}/like`, { method: 'POST' });
+                    cardEl.remove();
+                    state.pickClips = state.pickClips.filter(x=>x.id!==clipId);
+                    toast('잔치픽 해제 완료');
+                }
+            }
+        }catch(e){ console.error(e); toast('잔치픽 해제 실패'); }
+    }
+
+    // ===== 내 클립 액션 =====
+    async function editCaption(clip, capEl){
+        const next = prompt('새 캡션을 입력하세요', (clip.caption||'').trim());
+        if (next == null) return;
+        try{
+            await getJson(`/api/clips/${clip.id}`, { method:'PATCH', body: JSON.stringify({ caption: next }) });
+            clip.caption = next; capEl.textContent = next; toast('수정 완료');
+        }catch(e){ console.error(e); toast('수정 실패'); }
+    }
+
+    async function deleteClip(clip, cardEl){
+        if(!confirm('정말 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
+        try{
+            await getJson(`/api/clips/${clip.id}`, { method:'DELETE' });
+            cardEl.remove();
+            state.myClips = state.myClips.filter(x=>x.id!==clip.id);
+            $('#postCount').textContent = state.myClips.length;
+            toast('삭제 완료');
+        }catch(e){ console.error(e); toast('삭제 실패(권한/네트워크 확인)'); }
+    }
+
+    // ===== avatar upload =====
+    document.getElementById('avatarInput').addEventListener('change', async ()=>{
+        const f = document.getElementById('avatarInput').files[0]; if(!f) return;
+        const fd = new FormData(); fd.append('image', f);
+        try{
+            const json = await sendMultipart('/api/me/avatar', fd);
+            if (json?.avatarUrl) applyAvatar(json.avatarUrl);
+            toast('아바타가 변경되었습니다.');
+        }catch(e){ console.error(e); toast('아바타 업로드 실패'); }
+    });
+
+    // ===== tabs =====
+    document.querySelectorAll('.tab').forEach(t=>{
+        t.addEventListener('click', async ()=>{
+            document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+            t.classList.add('active');
+            const key = t.dataset.tab;
+            document.querySelectorAll('section.grid').forEach(s=>s.style.display='none');
+            document.getElementById(key).style.display='grid';
+
+            // 첫 진입 시 로딩
+            if (key==='saved' && !state.loaded.saved) await loadSaved();
+            if (key==='picks' && !state.loaded.picks) await loadPicks();
+        });
+    });
+
+    // ===== share =====
+    document.getElementById('shareBtn').addEventListener('click', async ()=>{
+        const url = location.origin + '/users/' + (state.me?.loginId || state.me?.id || '');
+        try{ await navigator.clipboard.writeText(url); toast('프로필 링크가 복사되었습니다.'); }
+        catch{ toast(url); }
+    });
+
+    // ===== 팔로우 리스트 모달 (+ 검색) =====
+    const dim = document.getElementById('dim');
+    const sheet = document.getElementById('followSheet');
+    const listBox = document.getElementById('followList');
+    const moreBtn = document.getElementById('sheetMore');
+    const titleEl = document.getElementById('sheetTitle');
+    const searchInput = document.getElementById('sheetSearch');
+
+    function openSheet(mode){
+        state.sheet.mode = mode;         // 'followers' | 'following'
+        state.sheet.page = 0;
+        state.sheet.totalPages = 1;
+        state.sheet.userId = state.me?.id;
+        state.sheet.q = '';
+        titleEl.textContent = mode === 'followers' ? '팔로워' : '팔로잉';
+        searchInput.value = '';
+        listBox.innerHTML = '';
+        moreBtn.style.display = 'none';
+
+        dim.classList.add('show');
+        sheet.classList.add('show');
+        sheet.setAttribute('aria-hidden','false');
+
+        loadFollowPage(); // 첫 페이지 로드
+    }
+    function closeSheet(){
+        dim.classList.remove('show');
+        sheet.classList.remove('show');
+        sheet.setAttribute('aria-hidden','true');
+    }
+    document.getElementById('sheetClose').addEventListener('click', closeSheet);
+    dim.addEventListener('click', closeSheet);
+
+    async function loadFollowPage(){
+        if(state.sheet.loading) return;
+        const { userId, mode, page, size, q } = state.sheet;
+        if(!userId) return;
+        state.sheet.loading = true;
+        try{
+            const qParam = q && q.trim() ? `&q=${encodeURIComponent(q.trim())}` : '';
+            const data = await getJson(`/api/members/${userId}/${mode}?page=${page}&size=${size}${qParam}`);
+            const items = pickPage(data);
+            if (page === 0 && items.length === 0) {
+                listBox.innerHTML = `<div class="empty">검색 결과가 없습니다.</div>`;
+            } else {
+                renderFollowItems(items);
+            }
+            state.sheet.totalPages = (data?.totalPages ?? 1);
+            // 다음 페이지 존재 여부
+            if (state.sheet.page + 1 < state.sheet.totalPages) {
+                moreBtn.style.display = 'inline-block';
+            } else {
+                moreBtn.style.display = 'none';
+            }
+        }catch(e){
+            console.error(e); toast('목록을 불러오지 못했습니다.');
+        }finally{
+            state.sheet.loading = false;
+        }
+    }
+
+    function renderFollowItems(arr){
+        const frag = document.createDocumentFragment();
+        arr.forEach(m=>{
+            const row = document.createElement('div'); row.className='person';
+
+            const img = document.createElement('img'); img.className='pav';
+            applyAvatar(m.avatarUrl, img);
+
+            const meta = document.createElement('div');
+            const nm = document.createElement('div'); nm.className='pname';
+            nm.textContent = (m.name && m.name.trim()) ? m.name : (m.loginId || ('사용자#'+(m.id ?? '')));
+            const handle = document.createElement('div'); handle.className='phandle';
+            handle.textContent = m.loginId ? '@'+m.loginId : '';
+            meta.appendChild(nm); meta.appendChild(handle);
+
+            const right = document.createElement('div'); right.className='pright';
+            const viewBtn = document.createElement('button'); viewBtn.className='btn'; viewBtn.textContent='프로필';
+            viewBtn.addEventListener('click', ()=> {
+                location.href = `/user.html?userId=${encodeURIComponent(m.id)}`;
+            });
+
+            right.appendChild(viewBtn);
+            row.appendChild(img);
+            row.appendChild(meta);
+            row.appendChild(right);
+
+            frag.appendChild(row);
+        });
+        listBox.appendChild(frag);
+    }
+
+    moreBtn.addEventListener('click', ()=>{
+        if (state.sheet.page + 1 < state.sheet.totalPages) {
+            state.sheet.page += 1;
+            loadFollowPage();
+        }
+    });
+
+    const doSearch = debounce(()=>{
+        state.sheet.page = 0;
+        state.sheet.totalPages = 1;
+        listBox.innerHTML = '';
+        loadFollowPage();
+    }, 300);
+    document.getElementById('sheetClear').addEventListener('click', ()=>{
+        state.sheet.q = '';
+        searchInput.value = '';
+        doSearch();
+        searchInput.focus();
+    });
+    document.getElementById('sheetSearch').addEventListener('input', (e)=>{
+        state.sheet.q = e.target.value || '';
+        doSearch();
+    });
+
+    // 카운트 텍스트 클릭 → 모달 열기
+    document.getElementById('followersOpen').addEventListener('click', ()=> openSheet('followers'));
+    document.getElementById('followingOpen').addEventListener('click', ()=> openSheet('following'));
+
+    // ===== 새로고침 =====
+    document.getElementById('refreshBtn').addEventListener('click', async ()=>{
+        try{
+            await loadSummary();
+            await loadMyClips();
+            state.loaded.saved=false; state.loaded.picks=false;
+            $('#saved').innerHTML=''; $('#picks').innerHTML='';
+            toast('새로고침 완료');
+        }catch{ toast('불러오기 실패'); }
+    });
+
+    (async function boot(){
+        try{ await loadSummary(); await loadMyClips(); }
+        catch(e){ console.error(e); toast('로그인이 필요하거나 서버 오류입니다.'); }
+    })();
+</script>
+</body>
+</html>

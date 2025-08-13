@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
+@Setter
 @Entity
 @Table(
         name = "member",
@@ -16,21 +17,25 @@ import lombok.*;
 public class Member {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // MariaDB/H2 호환 안전
     private Long id;
 
-    @Column(nullable = false) private String name;
+    @Column(nullable = false)
+    private String name;
 
-    @Column(nullable = false, length = 30, unique = true)
+    @Column(nullable = false, length = 30, unique = true) // 로그인 중복 방지 & 빠른 조회
     private String loginId;
 
-    @Column(nullable = false, length = 60)
+    @Column(nullable = false, length = 60) // BCrypt 길이 고려
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private String role = "ROLE_USER";
+    private String role = "ROLE_USER"; // MemberPrincipal의 권한 매핑에 필요
+
+    @Column(length = 255)
+    private String avatarUrl;
 
     @Column(name = "preference_survey_completed", nullable = false)
     private boolean preferenceSurveyCompleted;

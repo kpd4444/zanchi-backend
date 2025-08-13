@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <title>신고 목록</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    :root{color-scheme:dark light}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:#0b0b0b;color:#f2f2f2}
+    header{position:sticky;top:0;z-index:5;background:rgba(0,0,0,.6);backdrop-filter:saturate(180%) blur(8px);border-bottom:1px solid rgba(255,255,255,.08)}
+    .wrap{max-width:900px;margin:0 auto;padding:16px}
+    header .bar{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:12px 16px}
+    .title{font-weight:800}
+    .filters{display:flex;gap:8px;flex-wrap:wrap}
+    .input{height:36px;padding:0 10px;border:1px solid #2a2a2a;background:#141414;color:#fff;border-radius:10px;outline:none}
+    select.input{padding-right:24px}
+    .btn{height:36px;padding:0 12px;border:1px solid #2a2a2a;background:#1a1a1a;color:#fff;border-radius:10px;cursor:pointer}
+    .btn.warn{border-color:#b45309;background:#7c2d12}
+    .btn.ghost{background:transparent}
+    .list{display:flex;flex-direction:column;gap:14px;padding:16px}
+    .card{background:#111;border:1px solid #222;border-radius:14px;padding:12px}
+    .meta{display:flex;gap:10px;align-items:center;font-size:13px;color:#bdbdbd}
+    .meta .id{font-weight:800;color:#e5e5e5}
+    .pill{font-size:12px;border:1px solid #334155;background:#0b1220;color:#cbd5e1;border-radius:999px;padding:4px 8px}
+    .reason{margin-left:auto}
+    .detail{margin-top:8px;white-space:pre-wrap;line-height:1.45}
+    .row{display:flex;gap:8px;align-items:center;margin-top:10px}
+    .loadmore{display:block;margin:8px auto 20px}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 14px;border-radius:10px;border:1px solid #333;font-size:13px;z-index:99}
+    /* modal */
+    .dim{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.2s;z-index:90}
+    .dim.show{opacity:1;pointer-events:auto}
+    .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.98);opacity:0;pointer-events:none;transition:.2s;
+      width:min(760px,calc(100vw - 32px));max-height:80vh;background:#111;border:1px solid #222;border-radius:14px;z-index:91;display:flex;flex-direction:column}
+    .modal.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+    .modal header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #1b1b1b}
+    .modal .body{padding:12px 14px;overflow:auto}
+    .modal footer{display:flex;gap:8px;justify-content:flex-end;padding:12px 14px;border-top:1px solid #1b1b1b}
+    video{width:100%;background:#000;border-radius:8px}
+    @media (prefers-color-scheme:light){
+      body{background:#f7f7f8;color:#111}
+      header{background:rgba(255,255,255,.7);border-color:rgba(0,0,0,.06)}
+      .card{background:#fff;border-color:#ececec}
+      .input{background:#fff;color:#111;border-color:#eaeaea}
+      .btn{background:#fafafa;color:#111;border-color:#eaeaea}
+      .modal{background:#fff;border-color:#eaeaea}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="bar wrap">
+    <div class="title">신고 목록</div>
+    <div class="filters">
+      <input id="q" class="input" placeholder="키워드 검색(상세/신고자/클립ID)" />
+      <select id="reason" class="input">
+        <option value="">전체 사유</option>
+        <option value="MISINFO_SCAM">허위 정보/사기</option>
+        <option value="INAPPROPRIATE">부적절한 콘텐츠</option>
+        <option value="VIOLENCE_CRIME">폭력·학대·범죄</option>
+        <option value="SEXUAL_CONTENT">성적인 콘텐츠</option>
+      </select>
+      <button id="searchBtn" class="btn">검색</button>
+      <button id="resetBtn" class="btn ghost">초기화</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="list" class="list"></section>
+  <button id="moreBtn" class="btn loadmore" style="display:none">더 불러오기</button>
+</main>
+
+<!-- clip preview modal -->
+<div id="dim" class="dim" aria-hidden="true"></div>
+<section id="clipModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <header>
+    <div style="font-weight:800">클립 미리보기</div>
+    <div style="margin-left:auto"></div>
+    <button id="closeModal" class="btn">닫기</button>
+  </header>
+  <div class="body">
+    <video id="pvVideo" controls playsinline></video>
+    <div id="pvCaption" style="margin-top:8px;font-size:14px"></div>
+  </div>
+  <footer>
+    <button id="goUser" class="btn">작성자 프로필</button>
+  </footer>
+</section>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+  // ===== utils =====
+  function getToken(){
+    const t = localStorage.getItem('jwt') || localStorage.getItem('token');
+    if(!t) return null; return t.startsWith('Bearer ')? t : `Bearer ${t}`;
+  }
+  function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',1400); }
+  function pickPage(x){ return Array.isArray(x)?x:(Array.isArray(x?.content)?x.content:[]); }
+  function pageMeta(x){ if(!x||Array.isArray(x)) return {number:0,totalPages:1}; return {number:x.number??0,totalPages:x.totalPages??1}; }
+  function fmt(s){ try{ return s? new Date(s).toLocaleString():'' }catch{ return '' } }
+  const reasonLabel = {
+    MISINFO_SCAM: '허위 정보/사기',
+    INAPPROPRIATE: '부적절한 콘텐츠',
+    VIOLENCE_CRIME: '폭력·학대·범죄',
+    SEXUAL_CONTENT: '성적인 콘텐츠'
+  };
+
+  async function getJson(url,opt={}){
+    const headers = opt.headers? {...opt.headers} : {};
+    const hasBody = opt.body!=null;
+    const isForm  = typeof FormData!=='undefined' && opt.body instanceof FormData;
+    if(!headers['Content-Type'] && opt.method && opt.method!=='GET' && hasBody && !isForm){
+      headers['Content-Type'] = 'application/json';
+    }
+    const tk=getToken(); if(tk) headers['Authorization']=tk;
+    const res = await fetch(url,{...opt,headers});
+    if(!res.ok){ throw new Error(await res.text().catch(()=>'')) }
+    const ct = res.headers.get('Content-Type')||'';
+    if(ct.includes('application/json')) return res.json();
+    return null;
+  }
+
+  // ===== state =====
+  const state = { page:0, size:20, totalPages:1, q:'', reason:'', loading:false };
+
+  // ===== load list =====
+  async function loadReports(reset=false){
+    if(state.loading) return;
+    state.loading = true;
+    try{
+      if(reset){
+        state.page=0; state.totalPages=1;
+        document.getElementById('list').innerHTML='';
+      }
+      const params = new URLSearchParams({ page: state.page, size: state.size });
+      if(state.q.trim()) params.set('q', state.q.trim());
+      if(state.reason)  params.set('reason', state.reason);
+      const data = await getJson(`/api/reports?${params.toString()}`);
+      const items = pickPage(data);
+      const meta  = pageMeta(data);
+      state.totalPages = meta.totalPages;
+      render(items, state.page>0);
+      document.getElementById('moreBtn').style.display =
+              (state.page+1 < state.totalPages) ? 'inline-block' : 'none';
+    }catch(e){
+      console.error(e); toast('신고 목록을 불러오지 못했습니다.');
+    }finally{ state.loading = false; }
+  }
+
+  function render(items, append){
+    const list = document.getElementById('list');
+    const frag = document.createDocumentFragment();
+    items.forEach(r => frag.appendChild(buildCard(r)));
+    if(append) list.appendChild(frag); else { list.innerHTML=''; list.appendChild(frag); }
+  }
+
+  function buildCard(r){
+    const card = document.createElement('article'); card.className='card';
+    const meta = document.createElement('div'); meta.className='meta';
+    const id = document.createElement('div'); id.className='id'; id.textContent = `#${r.id ?? '-'}`;
+    const when = document.createElement('div'); when.textContent = fmt(r.createdAt || r.reportedAt);
+    const who  = document.createElement('div'); who.textContent = r.reporterName ? `by ${r.reporterName}` : (r.reporterId? `by 사용자#${r.reporterId}`:'');
+    const clip = document.createElement('div'); clip.textContent = r.clipId ? `클립ID ${r.clipId}` : '';
+    const pill = document.createElement('div'); pill.className='pill reason'; pill.textContent = reasonLabel[r.reason] || r.reason || '사유';
+    meta.appendChild(id); meta.appendChild(when); if(who.textContent) meta.appendChild(who); if(clip.textContent) meta.appendChild(clip); meta.appendChild(pill);
+
+    const detail = document.createElement('div'); detail.className='detail'; detail.textContent = r.detail || '(상세 없음)';
+
+    const row = document.createElement('div'); row.className='row';
+    const prev = document.createElement('button'); prev.className='btn'; prev.textContent='클립 미리보기';
+    prev.addEventListener('click', ()=> previewClip(r.clipId));
+    const delClip = document.createElement('button'); delClip.className='btn warn'; delClip.textContent='클립 삭제';
+    delClip.addEventListener('click', ()=> deleteClip(r.clipId));
+    const delReport = document.createElement('button'); delReport.className='btn'; delReport.textContent='신고 제거';
+    delReport.addEventListener('click', ()=> deleteReport(r.id, card));
+
+    row.appendChild(prev);
+    if(r.clipId) row.appendChild(delClip);
+    row.appendChild(delReport);
+
+    card.appendChild(meta); card.appendChild(detail); card.appendChild(row);
+    return card;
+  }
+
+  // ===== actions =====
+  async function deleteClip(clipId){
+    if(!clipId){ toast('클립ID가 없습니다.'); return; }
+    if(!confirm(`클립 ${clipId} 을(를) 삭제할까요?`)) return;
+    try{
+      await getJson(`/api/clips/${clipId}`, { method:'DELETE' });
+      toast('클립이 삭제되었습니다.');
+    }catch(e){ console.error(e); toast('클립 삭제 실패'); }
+  }
+
+  async function deleteReport(reportId, cardEl){
+    if(!confirm('해당 신고를 목록에서 제거할까요?')) return;
+    try{
+      await getJson(`/api/reports/${reportId}`, { method:'DELETE' });
+      cardEl.remove();
+      toast('신고가 제거되었습니다.');
+    }catch(e){ console.error(e); toast('신고 제거 실패'); }
+  }
+
+  // ===== clip preview modal =====
+  const dim = document.getElementById('dim');
+  const modal = document.getElementById('clipModal');
+  const pvVideo = document.getElementById('pvVideo');
+  const pvCaption = document.getElementById('pvCaption');
+  const closeModal = document.getElementById('closeModal');
+  const goUser = document.getElementById('goUser');
+  const previewState = { uploaderId:null };
+
+  function openModal(){ dim.classList.add('show'); modal.classList.add('show'); modal.setAttribute('aria-hidden','false'); }
+  function closePreview(){ dim.classList.remove('show'); modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); pvVideo.removeAttribute('src'); pvVideo.load(); pvCaption.textContent=''; previewState.uploaderId=null; }
+  closeModal.addEventListener('click', closePreview); dim.addEventListener('click', closePreview);
+  goUser.addEventListener('click', ()=>{ if(previewState.uploaderId!=null){ location.href = `/user.html?userId=${encodeURIComponent(previewState.uploaderId)}`; } });
+
+  async function previewClip(clipId){
+    if(!clipId){ toast('클립ID가 없습니다.'); return; }
+    try{
+      // 피드에서 id로 한 개만 가져오도록(백엔드에 단건 조회가 없다면 이전에 쓰던 트릭 재사용)
+      const data = await getJson(`/api/clips/feed?page=0&size=1&id=${clipId}`);
+      const list = Array.isArray(data)?data:(data?.content||[]);
+      const clip = list.find(x => String(x.id)===String(clipId));
+      if(!clip){ toast('클립을 찾지 못했습니다.'); return; }
+      pvVideo.src = clip.videoUrl || '';
+      pvCaption.textContent = clip.caption || '';
+      previewState.uploaderId = clip.uploaderId ?? clip.memberId ?? clip.authorId ?? null;
+      openModal();
+    }catch(e){ console.error(e); toast('미리보기 실패'); }
+  }
+
+  // ===== events =====
+  document.getElementById('searchBtn').addEventListener('click', ()=>{
+    state.q = document.getElementById('q').value || '';
+    state.reason = document.getElementById('reason').value || '';
+    loadReports(true);
+  });
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    document.getElementById('q').value=''; document.getElementById('reason').value='';
+    state.q=''; state.reason=''; loadReports(true);
+  });
+  document.getElementById('moreBtn').addEventListener('click', ()=>{
+    if(state.page + 1 < state.totalPages){ state.page += 1; loadReports(false); }
+  });
+  document.getElementById('q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('searchBtn').click(); });
+
+  // ===== boot =====
+  (async function boot(){ await loadReports(true); })();
+</script>
+</body>
+</html>

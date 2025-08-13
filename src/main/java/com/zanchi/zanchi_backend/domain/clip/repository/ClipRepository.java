@@ -11,9 +11,22 @@ import org.springframework.data.repository.query.Param;
 
 public interface ClipRepository extends JpaRepository<Clip,Long> {
 
+    long countByUploader_Id(Long uploaderId);
+
+    @Query("""
+      select c from Clip c
+      left join c.uploader u
+      where lower(coalesce(c.caption,'')) like lower(concat('%', :q, '%'))
+         or lower(coalesce(u.name, u.loginId, '')) like lower(concat('%', :q, '%'))
+         or lower(coalesce(u.loginId, '')) like lower(concat('%', :q, '%'))
+      order by c.id desc
+    """)
+    Page<Clip> search(@Param("q") String q, Pageable pageable);
+
+    Page<Clip> findByUploader_IdOrderByIdDesc(Long uploaderId, Pageable pageable);
+
     @EntityGraph(attributePaths = {"uploader"})
     Page<Clip> findAllByOrderByIdDesc(Pageable pageable);
-
 
     @Query(value = """
     select c from Clip c

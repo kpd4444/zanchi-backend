@@ -3,15 +3,18 @@ package com.zanchi.zanchi_backend.domain.clip.service;
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
 import com.zanchi.zanchi_backend.domain.clip.ClipLike;
+import com.zanchi.zanchi_backend.domain.clip.ClipSave;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
+import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,9 +29,8 @@ public class ClipService {
     private final ClipCommentRepository commentRepository;
     private final FileStorageService storage;
     private final MemberRepository memberRepository;
-
-    // 추가: 해시태그 동기화 서비스
-    private final HashtagService hashtagService;
+    private final ClipSaveRepository clipSaveRepository;
+    private final HashtagService hashtagService; // 해시태그 동기화
 
     /**
      * 클립 업로드
@@ -58,21 +60,7 @@ public class ClipService {
     }
 
     /**
-     * 캡션 수정(선택): 캡션 바뀌면 태그도 재동기화
-     */
-    @Transactional
-    public Clip updateCaption(Long clipId, Long memberId, String newCaption) {
-        Clip clip = clipRepository.findById(clipId).orElseThrow();
-        if (!clip.getUploader().getId().equals(memberId)) {
-            throw new IllegalArgumentException("forbidden");
-        }
-        clip.setCaption(newCaption);
-        hashtagService.syncClipTags(clip, newCaption);
-        return clip;
-    }
-
-    /**
-     * 피드
+     * 피드 (페이지네이션)
      */
     public Page<Clip> feed(Pageable pageable) {
         return clipRepository.findAllByOrderByIdDesc(pageable);
@@ -85,6 +73,7 @@ public class ClipService {
     public void increaseView(Long clipId) {
         final Clip c = clipRepository.findById(clipId).orElseThrow();
         c.setViewCount(c.getViewCount() + 1);
+        // 필요 시 강경 동시성: clipRepository.incrementViewCount(clipId);
     }
 
     /**
@@ -102,6 +91,7 @@ public class ClipService {
             try {
                 likeRepository.save(ClipLike.builder().clip(clip).member(member).build());
             } catch (DataIntegrityViolationException dup) {
+                // 동시 요청 레이스 케이스 무시
             }
         }
 
@@ -167,7 +157,95 @@ public class ClipService {
         return saved;
     }
 
+    @Transactional(readOnly = true)
     public Page<ClipComment> getReplies(Long parentCommentId, Pageable pageable) {
         return commentRepository.findByParentIdOrderByIdAsc(parentCommentId, pageable);
+    }
+
+    /**
+     * 캡션 수정 → 해시태그 재동기화
+     */
+    @Transactional
+    public Clip updateCaption(Long clipId, Long memberId, String caption) {
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new AccessDeniedException("FORBIDDEN");
+        }
+        clip.setCaption(caption);
+        hashtagService.syncClipTags(clip, caption);
+        return clip;
+    }
+
+    @Transactional
+    public Clip replaceVideo(Long clipId, Long memberId, MultipartFile video, String caption) throws Exception {
+        if (video == null || video.isEmpty()) {
+            throw new IllegalArgumentException("video file is required");
+        }
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new AccessDeniedException("FORBIDDEN");
+        }
+
+        String newUrl = storage.saveVideo(video);
+        String oldUrl = clip.getVideoUrl();
+        clip.setVideoUrl(newUrl);
+        if (caption != null) clip.setCaption(caption);
+
+        try { storage.deleteByUrl(oldUrl); } catch (Exception ignore) {}
+
+        return clip;
+    }
+
+    @Transactional
+    public void deleteClip(Long clipId, Long memberId) {
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new AccessDeniedException("FORBIDDEN");
+        }
+        String url = clip.getVideoUrl();
+        clipRepository.delete(clip);
+        try { storage.deleteByUrl(url); } catch (Exception ignore) {}
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Clip> myClips(Long memberId, Pageable pageable) {
+        return clipRepository.findByUploader_IdOrderByIdDesc(memberId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Clip> searchClips(String q, Pageable pageable) {
+        String s = (q == null) ? "" : q.trim();
+        return clipRepository.search(s, pageable);
+    }
+
+    // 저장 토글
+    @Transactional
+    public boolean toggleSave(Long clipId, Long memberId) {
+        if (clipSaveRepository.existsByMember_IdAndClip_Id(memberId, clipId)) {
+            clipSaveRepository.deleteByMember_IdAndClip_Id(memberId, clipId);
+            return false;
+        }
+        var member = memberRepository.getReferenceById(memberId);
+        var clip = clipRepository.getReferenceById(clipId);
+        clipSaveRepository.save(ClipSave.builder().member(member).clip(clip).build());
+        return true;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Clip> savedClips(Long memberId, Pageable pageable) {
+        return clipSaveRepository
+                .findByMember_IdOrderByIdDesc(memberId, pageable)
+                .map(ClipSave::getClip);
+    }
+
+    @Transactional
+    public void unsave(Long memberId, Long clipId) {
+        clipSaveRepository.deleteByMemberIdAndClipId(memberId, clipId);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Clip> pickClips(Long memberId, Pageable pageable) {
+        return likeRepository.findByMemberIdOrderByIdDesc(memberId, pageable)
+                .map(ClipLike::getClip);
     }
 }
