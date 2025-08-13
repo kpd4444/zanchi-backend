@@ -36,17 +36,23 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 프리플라이트 허용
+                        // preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // 공개 리소스 허용
-                        .requestMatchers("/", "/index.html", "/signup.html","/api/login" ,"/login.html" ,
-                                "/members.html", "/api/auth/**", "/api/signup","/api/members", "/api/members/**").permitAll()
+                        // 공개 리소스
+                        .requestMatchers(
+                                "/", "/index.html", "/signup.html", "/login.html", "/members.html",
+                                "/api/login", "/api/auth/**", "/api/signup", "/api/members", "/api/members/**",
+                                "/api/shows/**",
+                                "/reservation-test.html"                  // ← 테스트 페이지 허용
+                        ).permitAll()
 
-                        // 클립 API는 인증 필요
-                        .requestMatchers("/api/clips/**").authenticated()
+                        // 인증 필요 API
+                        .requestMatchers(HttpMethod.POST, "/api/reservations").authenticated()
+                        .requestMatchers(HttpMethod.GET,  "/api/reservations/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/reservations/*/cancel").authenticated()  // ← 수정
 
-                        // 그 외는 인증 필요
+                        // 그 외 모두 인증
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(e -> e
