@@ -27,6 +27,9 @@ public class ClipService {
     private final FileStorageService storage;
     private final MemberRepository memberRepository;
 
+    // 추가: 해시태그 동기화 서비스
+    private final HashtagService hashtagService;
+
     /**
      * 클립 업로드
      */
@@ -46,37 +49,46 @@ public class ClipService {
                 .videoUrl(videoUrl)
                 .build();
 
-        return clipRepository.save(clip);
+        Clip saved = clipRepository.save(clip);
+
+        // 본문에서 #태그 추출하여 연결
+        hashtagService.syncClipTags(saved, caption);
+
+        return saved;
     }
 
     /**
-     * 피드 (페이지네이션)
-     * - N+1 방지 위해 가능하면 업로더 fetch join 메서드 사용 권장 (주석 참고)
+     * 캡션 수정(선택): 캡션 바뀌면 태그도 재동기화
+     */
+    @Transactional
+    public Clip updateCaption(Long clipId, Long memberId, String newCaption) {
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        if (!clip.getUploader().getId().equals(memberId)) {
+            throw new IllegalArgumentException("forbidden");
+        }
+        clip.setCaption(newCaption);
+        hashtagService.syncClipTags(clip, newCaption);
+        return clip;
+    }
+
+    /**
+     * 피드
      */
     public Page<Clip> feed(Pageable pageable) {
-
-        // return clipRepository.findAllWithUploader(pageable);
-
-        // 현재 메서드가 이미 존재한다면 일단 유지
         return clipRepository.findAllByOrderByIdDesc(pageable);
     }
 
     /**
-     * 조회수 증가 (낙관적: 엔티티 읽고 +1)
-     * - 동시성 더 강하게 원하면 레포에 update 쿼리 추가 권장
+     * 조회수 증가
      */
     @Transactional
     public void increaseView(Long clipId) {
         final Clip c = clipRepository.findById(clipId).orElseThrow();
         c.setViewCount(c.getViewCount() + 1);
-        // 강경한 동시성 필요 시:
-        // clipRepository.incrementViewCount(clipId);
     }
 
     /**
      * 좋아요 토글
-     * - 중복 좋아요는 유니크 제약으로 방지 (ClipLike uk: clip_id + member_id)
-     * - 토글 후 count 재계산 -> 클립에 반영 (프론트에 카운트 보낼 때 일관성)
      */
     @Transactional
     public boolean toggleLike(Long clipId, Long memberId) {
@@ -90,22 +102,18 @@ public class ClipService {
             try {
                 likeRepository.save(ClipLike.builder().clip(clip).member(member).build());
             } catch (DataIntegrityViolationException dup) {
-                // 동시 요청으로 인한 레이스: 이미 좋아요가 생긴 경우
-                // 무시하고 아래 카운트 재계산으로 일관성 확보
             }
         }
 
-        // 재계산 후 저장 (조회 쿼리 1회)
         final long count = likeRepository.countByClipId(clipId);
         final Clip clip = clipRepository.findById(clipId).orElseThrow();
         clip.setLikeCount(count);
 
-        return !existed; // true: 좋아요됨, false: 좋아요 취소됨
+        return !existed;
     }
 
     /**
      * 댓글 작성
-     * - 저장 후 총 카운트 재계산하여 클립에 반영
      */
     @Transactional
     public ClipComment addComment(Long clipId, Long memberId, String content) {
@@ -118,18 +126,16 @@ public class ClipService {
         final ClipComment saved = commentRepository.save(
                 ClipComment.builder()
                         .clip(clip)
-                        .author(member)   // 네 현재 엔티티가 author가 아니라 member 필드였음
+                        .author(member)
                         .content(content.trim())
                         .build()
         );
 
-        // 카운트 재계산하여 반영
         final long cnt = commentRepository.countByClipId(clipId);
         clip.setCommentCount(cnt);
 
         return saved;
     }
-
 
     @Transactional
     public ClipComment addReply(Long clipId, Long parentCommentId, Long memberId, String content) {
@@ -143,26 +149,24 @@ public class ClipService {
             throw new IllegalArgumentException("parent comment not in this clip");
         }
 
-        Clip clip = parent.getClip(); // 같은 클립
+        Clip clip = parent.getClip();
         Member author = memberRepository.findById(memberId).orElseThrow();
 
         ClipComment reply = ClipComment.builder()
                 .clip(clip)
-                .author(author)      // ← 필드명 author
-                .parent(parent)      // ← 부모 연결
+                .author(author)
+                .parent(parent)
                 .content(content.trim())
                 .build();
 
         ClipComment saved = commentRepository.save(reply);
 
-        // 총 댓글수 갱신(선택)
         long cnt = commentRepository.countByClipId(clipId);
         clip.setCommentCount(cnt);
 
         return saved;
     }
 
-    @Transactional(readOnly = true)
     public Page<ClipComment> getReplies(Long parentCommentId, Pageable pageable) {
         return commentRepository.findByParentIdOrderByIdAsc(parentCommentId, pageable);
     }

@@ -26,4 +26,17 @@ public interface ClipRepository extends JpaRepository<Clip,Long> {
     @Modifying
     @Query("update Clip c set c.viewCount = c.viewCount + 1 where c.id = :clipId")
     int incrementViewCount(@Param("clipId") Long clipId);
+
+    // 태그로 클립 검색
+    @Query("""
+  select c
+  from Clip c
+  where exists (
+    select 1 from ClipTag ct
+    join ct.tag t
+    where ct.clip = c and t.normalizedName = :normalized
+  )
+  order by c.id desc
+""")
+    Page<Clip> findByTagNormalized(@Param("normalized") String normalized, Pageable pageable);
 }
