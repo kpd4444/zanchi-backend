@@ -20,14 +20,18 @@ public class MemberPrincipal implements UserDetails {
         this.member = member;
     }
 
+    public Long getId() {
+        return member.getId();
+    }
 
     @Override
     public String getPassword() {
         return member.getPassword();
     }
 
-    public Long getId() {
-        return member.getId();
+    @Override
+    public String getUsername() {
+        return member.getLoginId();
     }
 
     @Override
@@ -39,11 +43,6 @@ public class MemberPrincipal implements UserDetails {
         }
         String roleName = r.startsWith("ROLE_") ? r : "ROLE_" + r;
         return List.of(new SimpleGrantedAuthority(roleName));
-    }
-
-    @Override
-    public String getUsername() {
-        return member.getLoginId();
     }
 
     @Override public boolean isAccountNonExpired() { return true; }

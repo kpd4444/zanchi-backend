@@ -15,8 +15,5 @@ public interface ClipCommentRepository extends JpaRepository<ClipComment,Long> {
 
     Page<ClipComment> findByParentIdOrderByIdAsc(Long parentId, Pageable pageable);
 
-
-
-
     Page<ClipComment> findByClipIdAndParentIsNullOrderByIdAsc(Long clipId, Pageable pageable);
 }

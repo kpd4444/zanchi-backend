@@ -26,7 +26,7 @@ public class Member {
     @Column(nullable = false, length = 30, unique = true) // 로그인 중복 방지 & 빠른 조회
     private String loginId;
 
-    @Column(nullable = false, length = 60)// BCrypt 길이 고려
+    @Column(nullable = false, length = 60) // BCrypt 길이 고려
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
@@ -36,4 +36,25 @@ public class Member {
 
     @Column(length = 255)
     private String avatarUrl;
+
+    @Column(name = "preference_survey_completed", nullable = false)
+    private boolean preferenceSurveyCompleted;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer point = 0;
+
+    public void addPoint(int amount) {
+        this.point += amount;
+    }
+
+    public void usePoint(int amount) {
+        if (amount < 0) throw new IllegalArgumentException("amount must be >= 0");
+        if (this.point < amount) throw new IllegalStateException("insufficient points");
+        this.point -= amount;
+    }
+
+    public void markPreferenceSurveyCompleted() {
+        this.preferenceSurveyCompleted = true;
+    }
 }

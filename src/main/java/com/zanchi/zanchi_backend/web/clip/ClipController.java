@@ -2,10 +2,8 @@ package com.zanchi.zanchi_backend.web.clip;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
-import com.zanchi.zanchi_backend.domain.clip.ClipSave;
 import com.zanchi.zanchi_backend.domain.clip.dto.*;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
-import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
 import com.zanchi.zanchi_backend.domain.clip.service.ClipService;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
 import jakarta.validation.Valid;
@@ -45,11 +43,11 @@ public class ClipController {
         return ResponseEntity.ok(ClipUploadRes.of(saved));
     }
 
-    // 2) 피드 (페이지네이션) - 항상 작성자 이름 포함해서 반환
+    // 2) 피드 (페이지네이션)
     @GetMapping("/api/clips/feed")
     public ResponseEntity<Page<ClipFeedRes>> feed(@RequestParam(defaultValue = "0") int page,
                                                   @RequestParam(defaultValue = "10") int size) {
-        Page<Clip> p = clipService.feed(PageRequest.of(page, size)); // Page<Clip>
+        Page<Clip> p = clipService.feed(PageRequest.of(page, size));
         Page<ClipFeedRes> mapped = p.map(ClipFeedRes::of);
         return ResponseEntity.ok(mapped);
     }
@@ -61,7 +59,7 @@ public class ClipController {
         return ResponseEntity.ok().build();
     }
 
-    // 4) 좋아요 토글 (인증 필수, NPE 방지)
+    // 4) 좋아요 토글
     @PostMapping("/api/clips/{clipId}/like")
     public ResponseEntity<?> like(@PathVariable Long clipId,
                                   @AuthenticationPrincipal(expression = "id") Long memberId) {
@@ -72,7 +70,7 @@ public class ClipController {
         return ResponseEntity.ok(new LikeToggleRes(liked));
     }
 
-    // 5) 댓글 목록/작성
+    // 5) 댓글 목록
     @GetMapping("/api/clips/{clipId}/comments")
     public ResponseEntity<Page<ClipCommentRes>> comments(@PathVariable Long clipId,
                                                          @RequestParam(defaultValue = "0") int page,
@@ -82,6 +80,7 @@ public class ClipController {
         return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
     }
 
+    // 5-1) 댓글 작성
     @PostMapping("/api/clips/{clipId}/comments")
     public ResponseEntity<?> addComment(@PathVariable Long clipId,
                                         @AuthenticationPrincipal(expression = "id") Long memberId,
@@ -102,7 +101,7 @@ public class ClipController {
             @RequestParam(defaultValue = "20") int size) {
 
         var p = clipService.getReplies(commentId, PageRequest.of(page, size));
-        var list = p.getContent().stream().map(ClipCommentRes::of).toList(); // 기존 DTO 재사용
+        var list = p.getContent().stream().map(ClipCommentRes::of).toList();
         return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
     }
 
@@ -117,8 +116,9 @@ public class ClipController {
             return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
         }
         var saved = clipService.addReply(clipId, commentId, memberId, req.content());
-        return ResponseEntity.ok(ClipCommentRes.of(saved)); // 기존 응답 DTO 그대로
+        return ResponseEntity.ok(ClipCommentRes.of(saved));
     }
+
     // 6) 캡션만 수정 (JSON PATCH)
     @PatchMapping("/api/clips/{clipId}")
     public ResponseEntity<?> updateCaption(
@@ -127,7 +127,7 @@ public class ClipController {
             @Valid @RequestBody ClipUpdateReq req) {
         if (memberId == null) return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
         Clip updated = clipService.updateCaption(clipId, memberId, req.caption());
-        return ResponseEntity.ok(ClipUploadRes.of(updated)); // 기존 응답 DTO 재사용
+        return ResponseEntity.ok(ClipUploadRes.of(updated));
     }
 
     // 7) 비디오 교체(+캡션 옵션) (multipart/form-data)
@@ -149,7 +149,7 @@ public class ClipController {
             @AuthenticationPrincipal(expression = "member.id") Long memberId) {
         if (memberId == null) return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
         clipService.deleteClip(clipId, memberId);
-        return ResponseEntity.noContent().build(); // 204
+        return ResponseEntity.noContent().build();
     }
 
     // 내 페이지용(내 계정 기준)
@@ -172,6 +172,8 @@ public class ClipController {
         var p = clipService.myClips(userId, PageRequest.of(page, size)).map(ClipFeedRes::of);
         return ResponseEntity.ok(p);
     }
+
+    // 검색
     @GetMapping("/api/clips/search")
     public ResponseEntity<Page<ClipFeedRes>> searchClips(
             @RequestParam String q,
@@ -181,8 +183,7 @@ public class ClipController {
         return ResponseEntity.ok(p);
     }
 
-    //------------------------------------저장
-
+    // 저장 토글
     @PostMapping("/api/clips/{clipId}/save")
     public ResponseEntity<SaveToggleRes> toggleSave(
             @PathVariable Long clipId,
@@ -192,7 +193,7 @@ public class ClipController {
         return ResponseEntity.ok(new SaveToggleRes(saved));
     }
 
-    // 내 저장한 클립 목록
+    // 내가 저장한 클립 목록
     @GetMapping("/api/me/saved")
     public ResponseEntity<Page<ClipFeedRes>> mySaved(
             @AuthenticationPrincipal(expression="member.id") Long meId,
@@ -204,10 +205,7 @@ public class ClipController {
         return ResponseEntity.ok(p);
     }
 
-
-
-    //------------------------------------저장 끝
-
+    // 내가 좋아요한(픽) 클립 목록
     @GetMapping("/api/me/picks")
     public ResponseEntity<Page<ClipFeedRes>> myPicks(
             @AuthenticationPrincipal(expression="member.id") Long meId,
@@ -219,6 +217,7 @@ public class ClipController {
         return ResponseEntity.ok(p);
     }
 
+    // 저장 해제 (id 기반)
     @DeleteMapping("/api/clips/{clipId}/save")
     public ResponseEntity<?> unsave(@PathVariable Long clipId,
                                     @AuthenticationPrincipal String loginId) {

@@ -27,6 +27,4 @@ public record ClipCommentRes(
                 .createdAt(cc.getCreatedAt())
                 .build();
     }
-
-
 }

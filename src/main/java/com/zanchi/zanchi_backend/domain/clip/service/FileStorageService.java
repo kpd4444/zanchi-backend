@@ -14,6 +14,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class FileStorageService {
+
     @Value("${app.upload.dir}")
     private String uploadDir;
 
@@ -23,16 +24,33 @@ public class FileStorageService {
     private static final String CLIP_PREFIX   = "/uploads/clips/";
     private static final String AVATAR_PREFIX = "/uploads/avatars/";
 
+    /**
+     * 비디오 저장
+     */
     public String saveVideo(MultipartFile file) throws Exception {
         Files.createDirectories(Path.of(uploadDir));
         String ext = getExt(file.getOriginalFilename());
-        String filename = UUID.randomUUID() + (ext.isEmpty()? "" : "." + ext);
+        String filename = UUID.randomUUID() + (ext.isEmpty() ? "" : "." + ext);
         Path target = Path.of(uploadDir, filename);
         file.transferTo(target.toFile());
-        // URL로 접근할 수 있게 /uploads 경로로 치환
-        return "/uploads/clips/" + filename;
+        return CLIP_PREFIX + filename;
     }
 
+    /**
+     * 아바타 저장
+     */
+    public String saveAvatar(MultipartFile file) throws Exception {
+        Files.createDirectories(Path.of(avatarDir));
+        String ext = getExt(file.getOriginalFilename());
+        String filename = UUID.randomUUID() + (ext.isEmpty() ? "" : "." + ext);
+        Path target = Path.of(avatarDir, filename);
+        file.transferTo(target.toFile());
+        return AVATAR_PREFIX + filename;
+    }
+
+    /**
+     * 업로드된 파일 삭제
+     */
     public void deleteByUrl(String url) {
         if (url == null || url.isBlank()) return;
         try {
@@ -65,19 +83,9 @@ public class FileStorageService {
         }
     }
 
-    public String saveAvatar(MultipartFile file) throws Exception {
-        Files.createDirectories(Path.of(avatarDir));
-        String ext = getExt(file.getOriginalFilename());
-        String filename = UUID.randomUUID() + (ext.isEmpty()? "" : "." + ext);
-        Path target = Path.of(avatarDir, filename);
-        file.transferTo(target.toFile());
-        return AVATAR_PREFIX + filename; // 예: /uploads/avatars/xxxx.png
-    }
-
     private String getExt(String name) {
         if (name == null) return "";
         int i = name.lastIndexOf('.');
-        return i == -1 ? "" : name.substring(i+1);
+        return i == -1 ? "" : name.substring(i + 1);
     }
-
 }
