@@ -3,10 +3,13 @@ package com.zanchi.zanchi_backend.web.member;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
 import com.zanchi.zanchi_backend.domain.member.MemberService;
+import com.zanchi.zanchi_backend.domain.member.dto.ChangeNameRequest;
+import com.zanchi.zanchi_backend.domain.member.dto.ChangeNameResponse;
 import com.zanchi.zanchi_backend.web.member.form.MemberForm;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
@@ -61,6 +64,18 @@ public class MemberController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("status", "fail", "message", "서버 오류 발생"));
         }
+    }
+
+    @PatchMapping("/name")
+    public ResponseEntity<?> changeMyName(
+            @Valid @RequestBody ChangeNameRequest req,
+            @AuthenticationPrincipal(expression = "member.id") Long meId // ← 네 프로젝트에 맞춘 표현식
+    ) {
+        if (meId == null) {
+            return ResponseEntity.status(401).body(java.util.Map.of("error", "UNAUTHORIZED"));
+        }
+        ChangeNameResponse res = memberService.changeName(meId, req.name());
+        return ResponseEntity.ok(res);
     }
 
 }

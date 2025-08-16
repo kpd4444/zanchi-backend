@@ -1,6 +1,8 @@
 package com.zanchi.zanchi_backend.domain.clip.repository;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
+import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankProjection;
+import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -8,6 +10,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import java.security.Timestamp;
+import java.time.Instant;
 
 public interface ClipRepository extends JpaRepository<Clip,Long> {
 
@@ -52,4 +57,16 @@ public interface ClipRepository extends JpaRepository<Clip,Long> {
   order by c.id desc
 """)
     Page<Clip> findByTagNormalized(@Param("normalized") String normalized, Pageable pageable);
+
+    @Query("""
+      select c.id as clipId,
+             u.id as uploaderId,
+             u.name as uploaderName,
+             c.likeCount as likeCount
+      from Clip c
+        join c.uploader u
+      where (:since is null or c.createdAt >= :since)
+      order by c.likeCount desc, c.createdAt desc
+      """)
+    Page<ClipRankView> findRanking(@Param("since") Instant since, Pageable pageable);
 }
