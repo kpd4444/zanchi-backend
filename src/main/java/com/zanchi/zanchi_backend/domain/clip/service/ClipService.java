@@ -1,16 +1,15 @@
 package com.zanchi.zanchi_backend.domain.clip.service;
 
-import com.zanchi.zanchi_backend.domain.clip.Clip;
-import com.zanchi.zanchi_backend.domain.clip.ClipComment;
-import com.zanchi.zanchi_backend.domain.clip.ClipLike;
-import com.zanchi.zanchi_backend.domain.clip.ClipSave;
-import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
-import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
-import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
-import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
+import com.zanchi.zanchi_backend.domain.clip.*;
+import com.zanchi.zanchi_backend.domain.clip.repository.*;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
+import com.zanchi.zanchi_backend.domain.notification.event.LikeCreatedEvent;
+import com.zanchi.zanchi_backend.domain.notification.event.CommentCreatedEvent;
+import com.zanchi.zanchi_backend.domain.notification.event.MentionCreatedEvent;
+import com.zanchi.zanchi_backend.domain.notification.event.ReplyCreatedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +17,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,7 +36,10 @@ public class ClipService {
     private final FileStorageService storage;
     private final MemberRepository memberRepository;
     private final ClipSaveRepository clipSaveRepository;
-    private final HashtagService hashtagService; // 해시태그 동기화
+    private final HashtagService hashtagService;                    // 해시태그 동기화
+    private final ClipMentionRepository clipMentionRepository;      // 클립 멘션
+    private final ClipCommentMentionRepository clipCommentRepo;     // 댓글 멘션
+    private final ApplicationEventPublisher publisher;              // 알림 이벤트 발행
 
     /**
      * 클립 업로드
@@ -53,8 +62,11 @@ public class ClipService {
 
         Clip saved = clipRepository.save(clip);
 
-        // 본문에서 #태그 추출하여 연결
+        // #태그 동기화
         hashtagService.syncClipTags(saved, caption);
+
+        // @멘션 동기화(캡션)
+        upsertMentions(saved.getId(), caption);
 
         return saved;
     }
@@ -77,7 +89,7 @@ public class ClipService {
     }
 
     /**
-     * 좋아요 토글
+     * 좋아요 토글 (+ 새 좋아요 시 알림)
      */
     @Transactional
     public boolean toggleLike(Long clipId, Long memberId) {
@@ -90,6 +102,10 @@ public class ClipService {
             final Member member = memberRepository.findById(memberId).orElseThrow();
             try {
                 likeRepository.save(ClipLike.builder().clip(clip).member(member).build());
+
+                // 새 좋아요 알림 (actor = memberId, receiver = 업로더)
+                Long receiverId = clip.getUploader().getId();
+                publisher.publishEvent(new LikeCreatedEvent(memberId, receiverId, clipId));
             } catch (DataIntegrityViolationException dup) {
                 // 동시 요청 레이스 케이스 무시
             }
@@ -103,7 +119,7 @@ public class ClipService {
     }
 
     /**
-     * 댓글 작성
+     * 댓글 작성 (+ 알림, 댓글 멘션 동기화)
      */
     @Transactional
     public ClipComment addComment(Long clipId, Long memberId, String content) {
@@ -121,12 +137,25 @@ public class ClipService {
                         .build()
         );
 
+        // [ADD - 중요] 부모(댓글) INSERT를 DB에 먼저 반영시켜 FK 통과 보장
+        commentRepository.flush();
+
         final long cnt = commentRepository.countByClipId(clipId);
         clip.setCommentCount(cnt);
+
+        // 댓글 멘션 동기화
+        upsertCommentMentions(saved);
+
+        // 댓글 알림 (receiver = 클립 업로더)
+        Long receiverId = clip.getUploader().getId();
+        publisher.publishEvent(new CommentCreatedEvent(memberId, receiverId, clipId, saved.getId()));
 
         return saved;
     }
 
+    /**
+     * 대댓글 작성 (+ 알림, 멘션 동기화)
+     */
     @Transactional
     public ClipComment addReply(Long clipId, Long parentCommentId, Long memberId, String content) {
         if (content == null || content.trim().isEmpty()) {
@@ -151,8 +180,18 @@ public class ClipService {
 
         ClipComment saved = commentRepository.save(reply);
 
+        // [ADD - 중요]
+        commentRepository.flush();
+
         long cnt = commentRepository.countByClipId(clipId);
         clip.setCommentCount(cnt);
+
+        // 대댓글 멘션 동기화
+        upsertCommentMentions(saved);
+
+        // 대댓글 알림 (receiver = 부모 댓글 작성자)
+        Long receiverId = parent.getAuthor().getId();
+        publisher.publishEvent(new ReplyCreatedEvent(memberId, receiverId, clipId, saved.getId()));
 
         return saved;
     }
@@ -163,7 +202,7 @@ public class ClipService {
     }
 
     /**
-     * 캡션 수정 → 해시태그 재동기화
+     * 캡션 수정 → 해시태그/멘션 재동기화
      */
     @Transactional
     public Clip updateCaption(Long clipId, Long memberId, String caption) {
@@ -172,7 +211,13 @@ public class ClipService {
             throw new AccessDeniedException("FORBIDDEN");
         }
         clip.setCaption(caption);
+
+        // #태그 재동기화
         hashtagService.syncClipTags(clip, caption);
+
+        // @멘션 재동기화
+        upsertMentions(clipId, caption);
+
         return clip;
     }
 
@@ -189,7 +234,13 @@ public class ClipService {
         String newUrl = storage.saveVideo(video);
         String oldUrl = clip.getVideoUrl();
         clip.setVideoUrl(newUrl);
-        if (caption != null) clip.setCaption(caption);
+
+        if (caption != null) {
+            clip.setCaption(caption);
+            // 캡션이 변경된 경우 동기화
+            hashtagService.syncClipTags(clip, caption);
+            upsertMentions(clipId, caption);
+        }
 
         try { storage.deleteByUrl(oldUrl); } catch (Exception ignore) {}
 
@@ -243,9 +294,75 @@ public class ClipService {
         clipSaveRepository.deleteByMemberIdAndClipId(memberId, clipId);
     }
 
+    // 내가 좋아요한 클립 목록
     @Transactional(readOnly = true)
     public Page<Clip> pickClips(Long memberId, Pageable pageable) {
         return likeRepository.findByMemberIdOrderByIdDesc(memberId, pageable)
                 .map(ClipLike::getClip);
     }
+
+    /* =========================
+       멘션 처리 (클립/댓글)
+       ========================= */
+
+    private void upsertMentions(Long clipId, String caption) {
+        clipMentionRepository.deleteByClipId(clipId);
+
+        // 프로젝트 내 MentionParser를 사용해 캡션에서 멘션된 memberId 추출
+        var ids = MentionParser.parseIdsFromCaption(caption);
+        if (ids == null || ids.isEmpty()) return;
+
+        var entities = ids.stream()
+                .distinct()
+                .map(mid -> ClipMention.builder()
+                        .clipId(clipId)
+                        .mentionedMemberId(mid)
+                        .build())
+                .toList();
+
+        clipMentionRepository.saveAll(entities);
+    }
+
+    private static final Pattern AT = Pattern.compile("(^|[^A-Za-z0-9_])@([A-Za-z0-9._-]{2,32})");
+
+    private Set<String> extractHandles(String text) {
+        if (text == null || text.isBlank()) return Set.of();
+        Matcher m = AT.matcher(text);
+        Set<String> out = new HashSet<>();
+        while (m.find()) out.add(m.group(2)); // @ 뒤의 핸들
+        return out;
+    }
+
+    private void upsertCommentMentions(ClipComment comment) {
+        clipCommentRepo.deleteByCommentId(comment.getId());
+
+        Set<String> handles = extractHandles(comment.getContent());
+        if (handles.isEmpty()) return;
+
+        List<Member> users = memberRepository.findAllByLoginIdIn(handles);
+        if (users.isEmpty()) return;
+
+        var rows = users.stream()
+                .map(u -> ClipCommentMention.builder()
+                        .comment(comment)
+                        .mentioned(u)
+                        .handleSnapshot(u.getLoginId())
+                        .build())
+                .collect(Collectors.toList());
+
+        clipCommentRepo.saveAll(rows);
+
+        // 🚀 여기서 멘션 알림 이벤트 발행
+        for (Member u : users) {
+            if (!u.getId().equals(comment.getAuthor().getId())) {
+                publisher.publishEvent(new MentionCreatedEvent(
+                        comment.getAuthor().getId(),
+                        u.getId(),
+                        comment.getClip().getId(),
+                        comment.getId()
+                ));
+            }
+        }
+    }
+
 }

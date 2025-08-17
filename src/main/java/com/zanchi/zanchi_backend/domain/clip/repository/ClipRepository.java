@@ -1,6 +1,7 @@
 package com.zanchi.zanchi_backend.domain.clip.repository;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
+import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -9,14 +10,16 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface ClipRepository extends JpaRepository<Clip,Long> {
+import java.time.Instant;
+
+public interface ClipRepository extends JpaRepository<Clip, Long> {
 
     long countByUploader_Id(Long uploaderId);
 
     @Query("""
       select c from Clip c
       left join c.uploader u
-      where lower(coalesce(c.caption,'')) like lower(concat('%', :q, '%'))
+      where lower(coalesce(c.caption, '')) like lower(concat('%', :q, '%'))
          or lower(coalesce(u.name, u.loginId, '')) like lower(concat('%', :q, '%'))
          or lower(coalesce(u.loginId, '')) like lower(concat('%', :q, '%'))
       order by c.id desc
@@ -28,12 +31,14 @@ public interface ClipRepository extends JpaRepository<Clip,Long> {
     @EntityGraph(attributePaths = {"uploader"})
     Page<Clip> findAllByOrderByIdDesc(Pageable pageable);
 
-    @Query(value = """
-    select c from Clip c
-    join fetch c.uploader u
-    order by c.id desc
-    """,
-            countQuery = "select count(c) from Clip c")
+    @Query(
+            value = """
+            select c from Clip c
+            join fetch c.uploader u
+            order by c.id desc
+        """,
+            countQuery = "select count(c) from Clip c"
+    )
     Page<Clip> findAllWithUploader(Pageable pageable);
 
     @Modifying
@@ -42,14 +47,27 @@ public interface ClipRepository extends JpaRepository<Clip,Long> {
 
     // 태그로 클립 검색
     @Query("""
-  select c
-  from Clip c
-  where exists (
-    select 1 from ClipTag ct
-    join ct.tag t
-    where ct.clip = c and t.normalizedName = :normalized
-  )
-  order by c.id desc
-""")
+      select c
+      from Clip c
+      where exists (
+        select 1 from ClipTag ct
+        join ct.tag t
+        where ct.clip = c and t.normalizedName = :normalized
+      )
+      order by c.id desc
+    """)
     Page<Clip> findByTagNormalized(@Param("normalized") String normalized, Pageable pageable);
+
+    // 랭킹 조회 (좋아요수 우선, 동률이면 최신순). since가 null이면 전체 기간
+    @Query("""
+      select c.id as clipId,
+             u.id as uploaderId,
+             u.name as uploaderName,
+             c.likeCount as likeCount
+      from Clip c
+        join c.uploader u
+      where (:since is null or c.createdAt >= :since)
+      order by c.likeCount desc, c.createdAt desc
+    """)
+    Page<ClipRankView> findRanking(@Param("since") Instant since, Pageable pageable);
 }

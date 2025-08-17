@@ -32,13 +32,13 @@
         .comment-item { display:flex; gap:10px; align-items:flex-start; }
         .comment-item .who { font-weight:700; font-size:12px; }
         .comment-item .text { font-size:13px; color:#e6e6e6; }
-        .comment-new { display:flex; gap:8px; }
+        .comment-new { display:flex; gap:8px; position:relative; }
         .comment-new input { flex:1; padding:10px 12px; border-radius:10px; border:1px solid #2a2a2a; background:#141414; color:#fff; outline:none; }
         .loadmore { display:block; width:100%; margin:10px 0 24px; }
         .hidden { display:none !important; }
         .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 14px; border-radius:10px; border:1px solid #333; z-index:9999; font-size:13px; }
 
-        /* ====== 신고 모달(하단 시트) ====== */
+        /* ====== 신고 모달 ====== */
         .r-dim{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:.2s;z-index:50}
         .r-dim.show{opacity:1;pointer-events:auto}
         .r-sheet{position:fixed;left:50%;transform:translateX(-50%) translateY(100%);bottom:0;width:min(680px,100vw);max-height:75vh;background:#111;border:1px solid #222;border-radius:16px 16px 0 0;box-shadow:0 -10px 24px rgba(0,0,0,.35);transition:.25s;z-index:51;display:flex;flex-direction:column}
@@ -49,6 +49,21 @@
         .r-row{display:flex;gap:10px;align-items:center;margin:8px 0}
         .r-detail{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a2a2a;background:#141414;color:#fff;min-height:72px}
         .r-actions{display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid #1b1b1b}
+
+        /* ====== 언급 링크 & 팝업 ====== */
+        .mention { color:#8b5cf6; text-decoration:none; }
+        .mention:hover { text-decoration:underline; }
+        .mention-popup{
+            position:absolute; left:0; top:calc(100% + 6px);
+            width:min(360px, 80vw);
+            background:#111; border:1px solid #2a2a2a; border-radius:10px;
+            box-shadow:0 10px 24px rgba(0,0,0,.25);
+            z-index:20; display:none; max-height:260px; overflow:auto; padding:6px;
+        }
+        .mention-item{display:flex; gap:10px; align-items:center; padding:8px; border-radius:8px; cursor:pointer; font-size:13px}
+        .mention-item:hover, .mention-item.active{background:#1a1a1a}
+        .mi-name{font-weight:700}
+        .mi-handle{color:#bdbdbd; font-size:12px}
 
         @media (prefers-color-scheme: light) {
             body { background:#f7f7f8; color:#111; }
@@ -62,6 +77,8 @@
             .toast { background:#111; }
             .r-sheet{background:#fff;border-color:#eaeaea}
             .r-detail{background:#fff;color:#111;border-color:#eaeaea}
+            .mention-popup{background:#fff;border-color:#eaeaea}
+            .mention-item:hover, .mention-item.active{background:#f5f5f7}
         }
     </style>
 </head>
@@ -126,7 +143,7 @@
     function likeCountOf(c){ return c.likeCount ?? (Array.isArray(c.likes) ? c.likes.length : 0); }
     function commentCountOf(c){ return c.commentCount ?? (Array.isArray(c.comments) ? c.comments.length : 0); }
 
-    // ========== MEMBER CACHE ==========
+    // ========== MEMBER CACHE (id -> name) ==========
     const memberNameCache = new Map();
     let membersLoaded = false;
 
@@ -196,7 +213,7 @@
             const list = pick(data);
             savedSet = new Set(list.map(x => String(x.id)));
         } catch (e) {
-            // 못 불러와도 기능 자체(토글)는 동작하게 둠
+            // ignore
         } finally {
             savedKnown = true;
             refreshSavedButtons();
@@ -221,23 +238,15 @@
         const isSaved = (btn.dataset.saved === '1') || savedSet.has(String(clipId));
         try{
             if (isSaved) {
-                // 우선 DELETE 시도, 실패 시 POST(토글) 폴백
-                try{
-                    await getJson(`/api/clips/${clipId}/save`, { method:'DELETE' });
-                }catch{
-                    await getJson(`/api/clips/${clipId}/save`, { method:'POST' });
-                }
+                try{ await getJson(`/api/clips/${clipId}/save`, { method:'DELETE' }); }
+                catch{ await getJson(`/api/clips/${clipId}/save`, { method:'POST' }); }
                 savedSet.delete(String(clipId));
                 btn.dataset.saved = '0';
                 btn.textContent = '저장';
                 toast('저장 해제됨');
             } else {
-                // 우선 POST 시도, 실패 시 DELETE(토글) 폴백
-                try{
-                    await getJson(`/api/clips/${clipId}/save`, { method:'POST' });
-                }catch{
-                    await getJson(`/api/clips/${clipId}/save`, { method:'DELETE' });
-                }
+                try{ await getJson(`/api/clips/${clipId}/save`, { method:'POST' }); }
+                catch{ await getJson(`/api/clips/${clipId}/save`, { method:'DELETE' }); }
                 savedSet.add(String(clipId));
                 btn.dataset.saved = '1';
                 btn.textContent = '저장 해제';
@@ -267,6 +276,113 @@
         return res.text().catch(()=>null);
     }
 
+    // ========== 언급 유틸 ==========
+    function escapeHtml(s){
+        return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    /** 본문/댓글의 @handle 을 링크로 변환 (XSS-safe) */
+    function linkifyMentions(text){
+        if(typeof text!=='string' || !text) return '';
+        const re = /(^|[^a-zA-Z0-9_])@([a-zA-Z0-9._-]{2,32})/g;
+        let out='', last=0, m;
+        while((m=re.exec(text))!==null){
+            const [full, pre, handle] = m;
+            const start = m.index;
+            out += escapeHtml(text.slice(last, start));
+            out += escapeHtml(pre);
+            out += `<a class="mention" href="/users/${encodeURIComponent(handle)}">@${escapeHtml(handle)}</a>`;
+            last = start + full.length;
+        }
+        out += escapeHtml(text.slice(last));
+        return out;
+    }
+    /** 입력창에 언급 자동완성 붙이기 */
+    function bindMention(inputEl){
+        const popup = document.createElement('div');
+        popup.className='mention-popup';
+        inputEl.parentElement.appendChild(popup);
+
+        let activeIdx=-1, items=[];
+        const stopChars = ' \n\t,.;:!?()[]{}<>"\'`~|\\';
+
+        const debounce=(fn,ms)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+
+        function findToken(){
+            const val = inputEl.value;
+            const pos = inputEl.selectionStart ?? val.length;
+            let i = pos-1;
+            for(; i>=0; i--){
+                const ch=val[i];
+                if (stopChars.includes(ch)) break;
+            }
+            const tokenStart = i+1;
+            if (val[tokenStart] !== '@') return null;
+            if (tokenStart>0 && !stopChars.includes(val[tokenStart-1])) return null;
+            const query = val.slice(tokenStart+1, pos);
+            if (query.includes('@')) return null;
+            return { start: tokenStart, end: pos, query };
+        }
+
+        async function searchMembers(q){
+            if(!q || !q.trim()) { items=[]; render(); return; }
+            try{
+                const data = await getJson(`/api/members/search?q=${encodeURIComponent(q.trim())}&page=0&size=10`);
+                items = (Array.isArray(data)?data:(Array.isArray(data?.content)?data.content:[]))
+                    .map(m=>({ id:m.id, name:m.name||'', loginId:m.loginId||m.handle||'', avatarUrl:m.avatarUrl||'' }))
+                    .filter(x=>x.loginId);
+                activeIdx = items.length?0:-1;
+                render();
+            }catch{ items=[]; render(); }
+        }
+        const doSearch = debounce(searchMembers, 150);
+
+        function render(){
+            if(!items.length){ popup.style.display='none'; popup.innerHTML=''; return; }
+            popup.innerHTML='';
+            items.forEach((it,i)=>{
+                const row=document.createElement('div'); row.className='mention-item'+(i===activeIdx?' active':'');
+                const nm=document.createElement('div'); nm.className='mi-name'; nm.textContent = it.name || it.loginId;
+                const hd=document.createElement('div'); hd.className='mi-handle'; hd.textContent='@'+it.loginId;
+                row.appendChild(nm); row.appendChild(hd);
+                row.addEventListener('click', ()=> choose(i));
+                popup.appendChild(row);
+            });
+            popup.style.display='block';
+        }
+
+        function choose(idx){
+            if(idx<0 || idx>=items.length) return;
+            const it = items[idx];
+            const token = findToken();
+            if(!token) return hide();
+            const val = inputEl.value;
+            const before = val.slice(0, token.start);
+            const after  = val.slice(token.end);
+            const insertion = '@'+it.loginId+' ';
+            inputEl.value = before + insertion + after;
+            const caret = (before + insertion).length;
+            inputEl.setSelectionRange(caret, caret);
+            hide();
+            inputEl.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+
+        function hide(){ popup.style.display='none'; activeIdx=-1; items=[]; }
+
+        inputEl.addEventListener('input', ()=>{
+            const t = findToken();
+            if (!t) { hide(); return; }
+            doSearch(t.query);
+        });
+        inputEl.addEventListener('keydown', (e)=>{
+            if (popup.style.display!=='block') return;
+            if (e.key==='ArrowDown'){ e.preventDefault(); activeIdx = (activeIdx+1)%items.length; render(); }
+            else if (e.key==='ArrowUp'){ e.preventDefault(); activeIdx = (activeIdx-1+items.length)%items.length; render(); }
+            else if (e.key==='Enter' || e.key==='Tab'){ e.preventDefault(); choose(activeIdx>=0?activeIdx:0); }
+            else if (e.key==='Escape'){ e.preventDefault(); hide(); }
+        });
+        document.addEventListener('click', (e)=>{ if(!popup.contains(e.target) && e.target!==inputEl) hide(); });
+    }
+
     // ========== FEED ==========
     async function loadFeed(reset = false) {
         if (state.loading) return;
@@ -283,7 +399,7 @@
             else moreBtn.classList.add('hidden');
 
             refreshAuthorNames();
-            ensureSavedLoaded(); // 저장 상태 로딩 후 버튼 라벨 갱신
+            ensureSavedLoaded();
         } catch (e) {
             toast('피드 불러오기 실패');
             console.error(e);
@@ -421,7 +537,7 @@
 
         const cap = document.createElement('div');
         cap.className = 'caption';
-        cap.textContent = c.caption || '';
+        cap.innerHTML = linkifyMentions(c.caption || '');
 
         const vb = document.createElement('div');
         vb.className = 'video-box';
@@ -462,7 +578,6 @@
             }
         });
 
-        /* ⬇️ 저장 버튼 */
         const saveBtn = document.createElement('button');
         saveBtn.className = 'btn save-btn';
         saveBtn.dataset.clipId = c.id;
@@ -470,7 +585,6 @@
         saveBtn.textContent = '저장';
         saveBtn.addEventListener('click', ()=> toggleSave(c.id, saveBtn));
 
-        /* 신고 버튼 */
         const reportBtn = document.createElement('button');
         reportBtn.className = 'btn';
         reportBtn.textContent = '신고';
@@ -486,7 +600,7 @@
 
         acts.appendChild(likeBtn);
         acts.appendChild(viewBtn);
-        acts.appendChild(saveBtn);   // ⬅️ 추가
+        acts.appendChild(saveBtn);
         acts.appendChild(reportBtn);
         acts.appendChild(counts);
 
@@ -499,8 +613,10 @@
         form.className = 'comment-new';
         const input = document.createElement('input');
         input.type = 'text';
-        input.placeholder = '댓글을 입력하세요';
+        input.placeholder = '댓글을 입력하세요 ( @ 로 언급 )';
         input.id = `comment-input-${c.id}`;
+        requestAnimationFrame(()=> bindMention(input));
+
         const send = document.createElement('button');
         send.className = 'btn';
         send.textContent = '등록';
@@ -590,7 +706,7 @@
 
             const text = document.createElement('div');
             text.className = 'text';
-            text.textContent = c.content ?? '';
+            text.innerHTML = linkifyMentions(c.content ?? '');
 
             const actions = document.createElement('div');
             actions.style.marginTop = '4px';
@@ -608,7 +724,8 @@
 
             const replyInput = document.createElement('input');
             replyInput.type = 'text';
-            replyInput.placeholder = '답글을 입력하세요';
+            replyInput.placeholder = '답글을 입력하세요 ( @ 로 언급 )';
+            requestAnimationFrame(()=> bindMention(replyInput));
 
             const replySend = document.createElement('button');
             replySend.className = 'btn';
@@ -693,7 +810,7 @@
 
             const txt = document.createElement('div');
             txt.className = 'text';
-            txt.textContent = r.content ?? '';
+            txt.innerHTML = linkifyMentions(r.content ?? '');
 
             wrap.appendChild(who);
             wrap.appendChild(txt);

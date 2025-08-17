@@ -6,6 +6,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface MemberRepository extends JpaRepository<Member, Long> {
@@ -28,4 +30,11 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     // 로그인ID로 ID만 조회
     @Query("select m.id from Member m where m.loginId = :loginId")
     Optional<Long> findIdByLoginId(@Param("loginId") String loginId);
+
+    // 이름 존재 여부 (대소문자 무시)
+    boolean existsByNameIgnoreCase(String name);
+
+    // 다수의 로그인ID로 사용자 목록 조회
+    @Query("select m from Member m where m.loginId in :handles")
+    List<Member> findAllByLoginIdIn(@Param("handles") Collection<String> handles);
 }

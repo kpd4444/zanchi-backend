@@ -3,133 +3,109 @@ package com.zanchi.zanchi_backend.config.jwt;
 import com.zanchi.zanchi_backend.config.security.MemberDetailsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.lang.Nullable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.util.StringUtils;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
-@Slf4j
+/**
+ * JwtAuthenticationFilter
+ * - 정적 경로(/favicon.ico, /css/**, /js/**, /images/**, *.html 등)는 shouldNotFilter()로 완전히 스킵
+ * - 토큰이 없거나/유효하지 않으면 그냥 체인 통과(보호 경로에서는 SecurityConfig가 401 처리)
+ * - Redis 블랙리스트(로그아웃 토큰 등) 확인은 선택적으로 수행
+ */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final MemberDetailsService memberDetailsService;
-
-    /**
-     * 운영에서는 반드시 주입, 개발에서는 null 가능
-     */
-    @Nullable
     private final RedisTemplate<String, String> redisTemplate;
-
-    /**
-     * 개발 모드에서 Redis 장애/미기동 시 무시 여부
-     */
     private final boolean ignoreRedisErrorsInDev;
 
-    private static final String ACCESS_TOKEN_COOKIE = "accessToken";
-    private static final String BLACKLIST_PREFIX = "LOGOUT:";
+    private static final AntPathMatcher matcher = new AntPathMatcher();
+    private static final List<String> STATIC_PATTERNS = List.of(
+            "/favicon.ico",
+            "/css/**", "/js/**", "/images/**", "/webjars/**", "/static/**",
+            "/", "/**/*.html"
+    );
 
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider,
-                                   MemberDetailsService memberDetailsService,
-                                   @Nullable RedisTemplate<String, String> redisTemplate,
-                                   @Value("${auth.dev.ignore-redis:false}") boolean ignoreRedisErrorsInDev) {
+    public JwtAuthenticationFilter(
+            JwtTokenProvider jwtTokenProvider,
+            MemberDetailsService memberDetailsService,
+            RedisTemplate<String, String> redisTemplate,
+            boolean ignoreRedisErrorsInDev
+    ) {
         this.jwtTokenProvider = jwtTokenProvider;
         this.memberDetailsService = memberDetailsService;
         this.redisTemplate = redisTemplate;
         this.ignoreRedisErrorsInDev = ignoreRedisErrorsInDev;
     }
 
+    // 정적 리소스는 아예 필터를 타지 않게 스킵
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain)
-            throws ServletException, IOException {
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) return false;
+        String uri = request.getRequestURI();
+        for (String p : STATIC_PATTERNS) {
+            if (matcher.match(p, uri)) return true;
+        }
+        return false;
+    }
 
-        String token = resolveToken(request);
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
-        if (StringUtils.hasText(token) && validateSafely(token)) {
+        try {
+            String token = jwtTokenProvider.extractAccessTokenFromCookie(request);
 
-            if (isBlacklisted(token)) {
-                log.warn("Blocked token by blacklist.");
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "로그아웃된 토큰입니다.");
+            // 토큰이 없으면 인증 없이 그대로 진행 (보호된 URL은 SecurityConfig가 401 처리)
+            if (token == null || token.isBlank()) {
+                filterChain.doFilter(request, response);
                 return;
             }
 
-            String loginId = jwtTokenProvider.getLoginIdFromToken(token);
-            var userDetails = memberDetailsService.loadUserByUsername(loginId);
+            // 토큰이 유효하지 않으면 그대로 통과 (보호된 URL에서 401)
+            if (!jwtTokenProvider.validateToken(token)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
 
-            var authentication = new UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.getAuthorities()
-            );
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            // (선택) Redis 블랙리스트 확인
+            if (redisTemplate != null) {
+                try {
+                    String black = redisTemplate.opsForValue().get("BL:"+token);
+                    if (black != null) {
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+                } catch (Exception e) {
+                    if (!ignoreRedisErrorsInDev) throw e; // 로컬은 무시 옵션
+                }
+            }
+
+            // 토큰에서 로그인ID 추출 후 UserDetails 로드
+            String loginId = jwtTokenProvider.getLoginIdFromToken(token);
+            UserDetails user = memberDetailsService.loadUserByUsername(loginId);
+
+            // SecurityContext 설정
+            var auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+            SecurityContextHolder.getContext().setAuthentication(auth);
+
+        } catch (Exception ex) {
+            // 필터 단계에서 401을 직접 내려버리면 정적/공개 경로도 영향을 받음 → 예외는 무시하고 체인 진행
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
-    }
-
-    /** Authorization 헤더(Bearer) → 쿠키 순서 */
-    private String resolveToken(HttpServletRequest request) {
-        String bearer = request.getHeader("Authorization");
-        if (StringUtils.hasText(bearer)) {
-            bearer = bearer.trim();
-            if (bearer.startsWith("Bearer ")) {
-                return bearer.substring(7).trim();
-            }
-            if (bearer.split("\\.").length == 3) {
-                return bearer;
-            }
-        }
-        if (request.getCookies() != null) {
-            for (Cookie c : request.getCookies()) {
-                if (ACCESS_TOKEN_COOKIE.equals(c.getName())) {
-                    return c.getValue();
-                }
-            }
-        }
-        return null;
-    }
-
-    /** 토큰 검증 시 예외 흡수 */
-    private boolean validateSafely(String token) {
-        try {
-            return jwtTokenProvider.validateToken(token);
-        } catch (Exception e) {
-            log.warn("Token validation error", e);
-            return false;
-        }
-    }
-
-    /**
-     * 블랙리스트 체크
-     * - dev 환경에서 ignoreRedisErrorsInDev=true이면 조회 자체를 건너뜀
-     * - prod 환경에서는 Redis 장애 시 차단
-     */
-    private boolean isBlacklisted(String token) {
-        // 개발 환경이면 조회 생략
-        if (ignoreRedisErrorsInDev) {
-            return false;
-        }
-
-        if (redisTemplate == null) {
-            log.warn("RedisTemplate is null in prod → block");
-            return true;
-        }
-
-        try {
-            return Boolean.TRUE.equals(redisTemplate.hasKey(BLACKLIST_PREFIX + token));
-        } catch (Exception e) {
-            log.warn("Redis error in blacklist check (prod) → block", e);
-            return true;
-        }
     }
 }

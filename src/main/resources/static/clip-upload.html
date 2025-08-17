@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>클립 올리기</title>
+  <title>클립 올리기 (@언급 포함)</title>
   <style>
     :root{--bg:#f5f5f7;--panel:#fff;--text:#111;--muted:#6b7280;--primary:#f3caa1;--ring:#e5e7eb;--shadow:0 6px 18px rgba(0,0,0,.06)}
     *{box-sizing:border-box} html,body{height:100%}
@@ -19,6 +19,7 @@
     .video-hint{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-weight:600;letter-spacing:.3px;background:repeating-linear-gradient(45deg,#9aa0a6 0,#9aa0a6 8px,#a7adb4 8px,#a7adb4 16px)}
     .fab{position:absolute;right:10px;bottom:-22px;width:72px;height:72px;border-radius:50%;background:radial-gradient(120% 120% at 20% 20%,#6c7bff,#a66cff 45%,#ff6aa0 100%);box-shadow:0 8px 20px rgba(0,0,0,.25);display:grid;place-items:center;color:#fff;font-weight:800;cursor:pointer;user-select:none;border:3px solid #e8e8ea}
     .fab small{display:block;font-size:14px}.row{margin-top:16px}
+    .caption-wrap{position:relative}
     .caption{width:100%;border:none;outline:none;padding:10px 0;font-size:16px;background:transparent}
     .divider{height:1px;background:var(--ring);margin:10px 0}
     .notice{font-size:13px;color:#444;line-height:1.6}
@@ -29,6 +30,32 @@
     input[type=file]{display:none}
     .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#111;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:.25s}
     .toast.show{opacity:1}
+
+    /* === @멘션 드롭다운 === */
+    .mention-box{
+      position:absolute; left:0; top:100%;
+      width:min(320px, 90vw);
+      background:#111; color:#fff;
+      border:1px solid #2a2a2a; border-radius:12px;
+      box-shadow:0 10px 28px rgba(0,0,0,.35);
+      padding:6px; display:none; z-index:5;
+    }
+    .mention-box.light{ background:#fff; color:#111; border-color:#eaeaea }
+    .mention-item{display:flex; align-items:center; gap:10px; padding:8px; border-radius:10px; cursor:pointer; }
+    .mention-item:hover, .mention-item.active{ background:#1a1a1a }
+    .mention-box.light .mention-item:hover, .mention-box.light .mention-item.active{ background:#f5f5f7 }
+    .mention-av{width:28px;height:28px;border-radius:50%;background:#333;flex:0 0 auto;object-fit:cover}
+    .mention-meta{display:flex; flex-direction:column}
+    .mention-name{font-size:13px; font-weight:700}
+    .mention-handle{font-size:12px; opacity:.75}
+    @media (prefers-color-scheme: light) {
+      body{color:#111}
+      .phone{background:#f7f7f8}
+      .topbar{background:#fff;border-color:#eaeaea}
+      .card{background:#fff}
+      .mention-box{background:#fff; color:#111; border-color:#eaeaea}
+      .mention-item:hover, .mention-item.active{ background:#f5f5f7 }
+    }
   </style>
 </head>
 <body>
@@ -46,13 +73,16 @@
       <div class="video-wrap" id="videoWrap">
         <div class="video-hint" id="hint">동영상을 선택하세요</div>
         <video id="player" playsinline controls></video>
-        <div class="fab" id="pickFab"><small>나겸</small></div>
+        <div class="fab" id="pickFab"><small>업로드</small></div>
       </div>
 
       <input id="file" type="file" accept="video/*" />
 
       <div class="row">
-        <input id="caption" class="caption" maxlength="150" placeholder="캡션 추가..." />
+        <div class="caption-wrap">
+          <input id="caption" class="caption" maxlength="150" placeholder="캡션 추가... (@아이디로 언급)" />
+          <div id="mentionBox" class="mention-box"></div>
+        </div>
         <div class="divider"></div>
         <p class="notice">
           잔치픽 순위로 상위 10명에게 공연 기회가 주어지며, 이후 본인에게 참여 의사가 달려 있음을 고지합니다
@@ -82,25 +112,39 @@
   const caption   = document.getElementById('caption');
   const submitBtn = document.getElementById('submit');
   const toast     = document.getElementById('toast');
+  const mentionBox= document.getElementById('mentionBox');
 
-  // ===== auth helper (중요) =====
+  // ===== 상수 =====
+  const SEARCH_ENDPOINT = '/api/members/search';
+
+  // ===== auth helper =====
   function getAuthHeader() {
     let t = localStorage.getItem('token') || localStorage.getItem('jwt');
     if (!t) return null;
     t = t.startsWith('Bearer ') ? t : `Bearer ${t}`;
-    // 앞으로 token만 사용하도록 정리
     localStorage.setItem('token', t);
     localStorage.removeItem('jwt');
     return t; // "Bearer eyJ..."
   }
 
+  // ===== 공통 유틸 =====
+  function showToast(msg, ms=1600){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'), ms);
+  }
+  function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+  const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  if (prefersLight) mentionBox.classList.add('light');
+
   // ===== 상태 =====
   let videoSelected = false;
+  let mentionOpen = false;
+  let mentionItems = [];
+  let mentionActive = 0;
 
-  // 파일 선택 트리거
+  // ===== 파일 선택 =====
   pickFab.addEventListener('click', () => fileInput.click());
-
-  // 파일 선택 → 프리뷰
   fileInput.addEventListener('change', () => {
     const f = fileInput.files[0];
     if (!f) return;
@@ -112,21 +156,145 @@
     updateButtonState();
   });
 
-  // 동의/캡션 변경 시 버튼 활성화
+  // ===== 동의/캡션 변경 시 버튼 활성화 =====
   agree.addEventListener('change', updateButtonState);
   caption.addEventListener('input', updateButtonState);
-
   function updateButtonState() {
     const ok = videoSelected && agree.checked;
     submitBtn.disabled = !ok;
     submitBtn.classList.toggle('enabled', ok);
   }
 
-  function showToast(msg, ms=1600){
-    toast.textContent = msg;
-    toast.classList.add('show');
-    setTimeout(()=>toast.classList.remove('show'), ms);
+  // ===== 멤버 검색 =====
+  async function searchMembers(q){
+    if (!q || q.trim().length === 0) return [];
+    const url = `${SEARCH_ENDPOINT}?q=${encodeURIComponent(q.trim())}&page=0&size=8`;
+    try {
+      const auth = getAuthHeader();
+      const res = await fetch(url, { headers: auth ? { Authorization: auth } : {} });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : (Array.isArray(data?.content) ? data.content : []);
+    } catch {
+      return [];
+    }
   }
+
+  function renderMentionBox(list){
+    mentionBox.innerHTML = '';
+    mentionItems = list.map(m => ({
+      id: m.id ?? m.memberId ?? m.userId,
+      name: m.name ?? m.username ?? m.loginId ?? '',
+      handle: m.loginId ?? m.username ?? '',
+      avatarUrl: m.avatarUrl || ''
+    }));
+    if (mentionItems.length === 0) {
+      mentionBox.style.display = 'none';
+      mentionOpen = false;
+      return;
+    }
+    mentionActive = 0;
+    for (let i=0;i<mentionItems.length;i++){
+      const it = mentionItems[i];
+      const row = document.createElement('div');
+      row.className = 'mention-item' + (i===0?' active':'');
+      const av = document.createElement('img');
+      av.className = 'mention-av';
+      av.src = it.avatarUrl || 'data:image/svg+xml;utf8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><rect width="100%" height="100%" fill="#444"/><circle cx="28" cy="20" r="10" fill="#aaa"/><rect x="10" y="34" width="36" height="12" rx="6" fill="#aaa"/></svg>`);
+      av.onerror = () => { av.src='data:image/svg+xml;utf8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><rect width="100%" height="100%" fill="#444"/><circle cx="28" cy="20" r="10" fill="#aaa"/><rect x="10" y="34" width="36" height="12" rx="6" fill="#aaa"/></svg>`); };
+
+      const meta = document.createElement('div');
+      meta.className = 'mention-meta';
+      const nm = document.createElement('div');
+      nm.className = 'mention-name';
+      nm.textContent = it.name || (it.handle ? `@${it.handle}` : `user#${it.id}`);
+      const hd = document.createElement('div');
+      hd.className = 'mention-handle';
+      hd.textContent = it.handle ? '@'+it.handle : '';
+      meta.appendChild(nm); meta.appendChild(hd);
+
+      row.appendChild(av); row.appendChild(meta);
+      row.addEventListener('mouseenter', ()=> setActive(i));
+      row.addEventListener('mousedown', (e)=> e.preventDefault()); // 포커스 유지
+      row.addEventListener('click', ()=> chooseActive(i));
+      mentionBox.appendChild(row);
+    }
+    mentionBox.style.display = 'block';
+    mentionOpen = true;
+  }
+
+  function setActive(idx){
+    const rows = mentionBox.querySelectorAll('.mention-item');
+    rows.forEach((r,i)=> r.classList.toggle('active', i===idx));
+    mentionActive = idx;
+  }
+  function chooseActive(idx = mentionActive){
+    if (!mentionOpen || !mentionItems.length) return;
+    const it = mentionItems[idx];
+    const handle = it.handle || it.name || `user${it.id}`;
+    replaceCurrentMention(`@${handle} `);
+    closeMention();
+  }
+  function closeMention(){
+    mentionOpen = false;
+    mentionBox.style.display = 'none';
+    mentionItems = [];
+  }
+
+  function replaceCurrentMention(text){
+    const pos = caption.selectionStart;
+    const before = caption.value.slice(0, pos);
+    const after  = caption.value.slice(pos);
+    const m = before.match(/@([\p{L}\p{N}_.-]{1,20})$/u);
+    if (!m) return;
+    const start = before.length - m[0].length; // "@keyword" 길이만큼
+    const next = before.slice(0, start) + text + after;
+    const caret = start + text.length;
+    caption.value = next;
+    caption.focus();
+    caption.setSelectionRange(caret, caret);
+  }
+
+  const runMention = debounce(async () => {
+    const pos = caption.selectionStart;
+    const before = caption.value.slice(0, pos);
+    const m = before.match(/@([\p{L}\p{N}_.-]{1,20})$/u);
+    if (!m) { closeMention(); return; }
+    const keyword = m[1];
+    if (!keyword) { closeMention(); return; }
+    const list = await searchMembers(keyword);
+    renderMentionBox(list);
+  }, 120);
+
+  caption.addEventListener('input', () => {
+    // 입력 바뀔 때마다 감지
+    runMention();
+  });
+
+  caption.addEventListener('keydown', (e) => {
+    if (!mentionOpen) return;
+    const max = mentionItems.length;
+    if (max === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((mentionActive + 1) % max);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((mentionActive - 1 + max) % max);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      chooseActive();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeMention();
+    }
+  });
+
+  document.addEventListener('click', (e)=>{
+    if (!mentionOpen) return;
+    if (!mentionBox.contains(e.target) && e.target !== caption) closeMention();
+  });
 
   // ===== 업로드 =====
   async function upload() {
@@ -138,7 +306,6 @@
       location.href = '/login.html';
       return;
     }
-
     const f = fileInput.files[0];
     if (!f) { showToast('동영상을 선택하세요'); return; }
 
@@ -150,7 +317,6 @@
       fd.append('video', f);
       fd.append('caption', caption.value || '');
 
-      // FormData 전송 시 Content-Type 강제 설정 금지!
       const res = await fetch('/api/clips', {
         method: 'POST',
         headers: { Authorization: auth },
@@ -167,7 +333,6 @@
         const txt = await res.text().catch(()=> '');
         throw new Error(`업로드 실패 (${res.status})\n${txt}`);
       }
-
       await res.json().catch(()=> ({}));
       showToast('업로드 완료!');
       setTimeout(()=> location.href = '/clip-feed.html', 600);
@@ -179,13 +344,12 @@
       updateButtonState();
     }
   }
-
   submitBtn.addEventListener('click', upload);
 
   // 개발 편의: F2 눌러 토큰 입력/수정
   window.addEventListener('keydown', (e)=>{
     if (e.key === 'F2') {
-      const cur = (localStorage.getItem('token') || localStorage.getItem('jwt') || '').replace(/^Bearer\s+/,'');
+      const cur = (localStorage.getItem('token') || localStorage.getItem('jwt') || '').replace(/^Bearer\s+/, '');
       const t = prompt('JWT를 입력하세요 (Bearer 제외, token으로 저장)', cur);
       if (t !== null) {
         localStorage.setItem('token', `Bearer ${t.trim()}`);
