@@ -291,13 +291,13 @@ public class ClipService {
 
     @Transactional
     public void unsave(Long memberId, Long clipId) {
-        clipSaveRepository.deleteByMemberIdAndClipId(memberId, clipId);
+        clipSaveRepository.deleteByMember_IdAndClip_Id(memberId, clipId);
     }
 
     // 내가 좋아요한 클립 목록
     @Transactional(readOnly = true)
     public Page<Clip> pickClips(Long memberId, Pageable pageable) {
-        return likeRepository.findByMemberIdOrderByIdDesc(memberId, pageable)
+        return likeRepository.findByMemberId(memberId, pageable)
                 .map(ClipLike::getClip);
     }
 
@@ -363,6 +363,17 @@ public class ClipService {
                 ));
             }
         }
+    }
+
+    @Transactional
+    public void unlike(Long clipId, Long memberId) {
+        // 존재하지 않아도 예외 없이 통과 → 멱등
+        likeRepository.deleteByClipIdAndMemberId(clipId, memberId);
+
+        // 최신 좋아요 수 반영
+        long cnt = likeRepository.countByClipId(clipId);
+        Clip clip = clipRepository.findById(clipId).orElseThrow();
+        clip.setLikeCount(cnt);
     }
 
 }

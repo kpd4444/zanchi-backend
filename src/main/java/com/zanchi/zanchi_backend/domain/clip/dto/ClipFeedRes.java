@@ -14,24 +14,29 @@ public record ClipFeedRes(
         long commentCount,
         long viewCount,
         String authorName,
+        String uploaderAvatarUrl, // 작성자의 아바타 URL
         Long uploaderId,
         LocalDateTime createdAt
 ) {
     public static ClipFeedRes of(Clip c) {
+        var uploader = c.getUploader();
 
-        String author = c.getUploader() != null
-                ? (c.getUploader().getName() != null ? c.getUploader().getName() : c.getUploader().getLoginId())
+        String author = uploader != null
+                ? (uploader.getName() != null ? uploader.getName() : uploader.getLoginId())
                 : "작성자";
+
+        String avatar = uploader != null ? uploader.getAvatarUrl() : null;
+
         return ClipFeedRes.builder()
                 .id(c.getId())
                 .videoUrl(c.getVideoUrl())
                 .caption(c.getCaption())
-
                 .likeCount(c.getLikes() != null ? c.getLikes().size() : 0)
                 .commentCount(c.getComments() != null ? c.getComments().size() : 0)
                 .viewCount(c.getViewCount())
                 .authorName(author)
-                .uploaderId(c.getUploader() != null ? c.getUploader().getId() : null)
+                .uploaderAvatarUrl(avatar)  // 아바타 URL 넣어주기
+                .uploaderId(uploader != null ? uploader.getId() : null)
                 .createdAt(c.getCreatedAt())
                 .build();
     }

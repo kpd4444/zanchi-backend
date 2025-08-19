@@ -8,23 +8,29 @@ import java.time.LocalDateTime;
 @Builder
 public record ClipCommentRes(
         Long id,
-        Long clipId,
-        Long parentId,
-        String content,
+        Long authorId,
         String authorName,
-        LocalDateTime createdAt
+        String authorAvatarUrl,
+        String content,
+        LocalDateTime createdAt,
+        Long parentId
 ) {
-    public static ClipCommentRes of(ClipComment cc){
-        String author = cc.getAuthor()!=null
-                ? (cc.getAuthor().getName()!=null ? cc.getAuthor().getName() : cc.getAuthor().getLoginId())
-                : "익명";
+    public static ClipCommentRes of(ClipComment c) {
+        var author = c.getAuthor();
+        Long    aid   = (author != null ? author.getId()        : null);
+        String  aname = (author != null
+                ? (author.getName() != null ? author.getName() : author.getLoginId())
+                : "익명");
+        String  aava  = (author != null ? author.getAvatarUrl() : null);
+
         return ClipCommentRes.builder()
-                .id(cc.getId())
-                .clipId(cc.getClip()!=null ? cc.getClip().getId() : null)
-                .parentId(cc.getParent()!=null ? cc.getParent().getId() : null)
-                .content(cc.getContent())
-                .authorName(author)
-                .createdAt(cc.getCreatedAt())
+                .id(c.getId())
+                .authorId(aid)
+                .authorName(aname)
+                .authorAvatarUrl(aava)
+                .content(c.getContent())
+                .createdAt(c.getCreatedAt())
+                .parentId(c.getParent() != null ? c.getParent().getId() : null)
                 .build();
     }
 }

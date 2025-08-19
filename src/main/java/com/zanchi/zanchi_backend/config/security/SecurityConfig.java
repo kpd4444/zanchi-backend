@@ -49,7 +49,9 @@ public class SecurityConfig {
                                 "/members.html", "/reservation-test.html",
                                 "/tags-test.html", "/notifications.html", "/clip-feed.html",
                                 "/favicon.ico",
-                                "/css/**", "/js/**", "/images/**", "/webjars/**"
+                                "/css/**", "/js/**", "/images/**", "/webjars/**",
+                                "/ops/redis-ping",
+                                "/api/top-liked"
                         ).permitAll()
 
                         // 공개 API (회원가입/로그인 등)

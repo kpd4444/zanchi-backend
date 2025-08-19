@@ -70,4 +70,16 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
       order by c.likeCount desc, c.createdAt desc
     """)
     Page<ClipRankView> findRanking(@Param("since") Instant since, Pageable pageable);
+
+    // 가장 많이 좋아요를 받은 10개의 클립을 조회하는 쿼리
+    @Query("""
+    select c.id as clipId,
+           u.id as uploaderId,
+           u.name as uploaderName,
+           c.likeCount as likeCount
+    from Clip c
+    join c.uploader u
+    order by c.likeCount desc, c.createdAt desc
+""")
+    Page<ClipRankView> findTop10ClipsByLikeCount(Pageable pageable);
 }

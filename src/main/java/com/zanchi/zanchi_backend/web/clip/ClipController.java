@@ -4,8 +4,11 @@ import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
 import com.zanchi.zanchi_backend.domain.clip.dto.*;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
+import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
 import com.zanchi.zanchi_backend.domain.clip.service.ClipService;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
+import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
+import com.zanchi.zanchi_backend.web.clip.dto.ClipRankResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -17,8 +20,10 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
@@ -28,6 +33,7 @@ public class ClipController {
     private final ClipService clipService;
     private final ClipCommentRepository commentRepository;
     private final MemberRepository memberRepository;
+    private final ClipRepository clipRepository;
 
     // 1) 업로드 (multipart/form-data: video, caption)
     @PostMapping(path = "/api/clips", consumes = "multipart/form-data")
@@ -62,12 +68,23 @@ public class ClipController {
     // 4) 좋아요 토글
     @PostMapping("/api/clips/{clipId}/like")
     public ResponseEntity<?> like(@PathVariable Long clipId,
-                                  @AuthenticationPrincipal(expression = "id") Long memberId) {
+                                  @AuthenticationPrincipal(expression = "member.id") Long memberId) {
         if (memberId == null) {
             return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
         }
         boolean liked = clipService.toggleLike(clipId, memberId);
         return ResponseEntity.ok(new LikeToggleRes(liked));
+    }
+
+    // 4-1) 좋아요 취소 (멱등)
+    @DeleteMapping("/api/clips/{clipId}/like")
+    public ResponseEntity<?> unlike(@PathVariable Long clipId,
+                                    @AuthenticationPrincipal(expression = "member.id") Long memberId) {
+        if (memberId == null) {
+            return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
+        }
+        clipService.unlike(clipId, memberId);
+        return ResponseEntity.noContent().build(); // 204
     }
 
     // 5) 댓글 목록
@@ -220,13 +237,28 @@ public class ClipController {
     // 저장 해제 (id 기반)
     @DeleteMapping("/api/clips/{clipId}/save")
     public ResponseEntity<?> unsave(@PathVariable Long clipId,
-                                    @AuthenticationPrincipal String loginId) {
-        if (loginId == null) {
+                                    @AuthenticationPrincipal(expression = "member.id") Long memberId) {
+        if (memberId == null) {
             return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
         }
-        Long meId = memberRepository.findIdByLoginId(loginId)
-                .orElseThrow(() -> new IllegalStateException("user not found: " + loginId));
-        clipService.unsave(meId, clipId);
+        clipService.unsave(memberId, clipId);
         return ResponseEntity.noContent().build();
+    }
+
+    // 가장 많은 좋아요를 받은 10개의 클립을 반환하는 API
+    @GetMapping("/api/top-liked")
+    public List<ClipRankResponse> getTopLikedClips(Pageable pageable) {
+        // Pageable 객체는 기본적으로 페이지와 크기를 받습니다. 예를 들어, 처음 10개를 가져옵니다.
+        Page<ClipRankView> topClips = clipRepository.findTop10ClipsByLikeCount(pageable);
+
+        // 반환할 DTO 객체로 변환
+        List<ClipRankResponse> response = topClips.stream()
+                .map(clip -> new ClipRankResponse(
+                        clip.getClipId(),
+                        clip.getUploaderName(),
+                        clip.getLikeCount()))
+                .collect(Collectors.toList());
+
+        return response;
     }
 }
