@@ -24,81 +24,60 @@ public class SecurityConfig {
     private final MemberDetailsService memberDetailsService;
     private final RedisTemplate<String, String> redisTemplate;
 
-    // 개발 중 Redis 장애 무시 여부(선택)
     @Value("${auth.dev.ignore-redis:false}")
     private boolean ignoreRedisErrorsInDev;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // 기본 보안 정책
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // 인가 규칙
                 .authorizeHttpRequests(auth -> auth
-                        // CORS preflight
+                        // preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // 정적/페이지 허용 (테스트용 페이지 포함)
+                        // 정적 리소스(필요한 페이지만 허용 중)
                         .requestMatchers(
-                                "/", "/index.html",
-                                "/signup.html", "/login.html",
-                                "/members.html", "/reservation-test.html",
-                                "/tags-test.html", "/notifications.html", "/clip-feed.html",
-                                "/favicon.ico",
-                                "/css/**", "/js/**", "/images/**", "/webjars/**",
-                                "/ops/redis-ping",
-                                "/api/top-liked"
+                                "/", "/index.html", "/signup.html", "/login.html", "/members.html",
+                                "/reservation-test.html",
+                                "/tags-test.html"            // ← 태그 테스트 페이지 공개
                         ).permitAll()
 
-                        // 공개 API (회원가입/로그인 등)
+                        // 로그인/가입 등 공개 API
                         .requestMatchers(
                                 "/api/login", "/api/auth/**", "/api/signup",
+                                "/api/members", "/api/members/**",
                                 "/api/shows/**"
                         ).permitAll()
 
-                        // 공개 조회 허용(피드/태그/댓글 조회/뷰 카운트 증가)
-                        .requestMatchers(HttpMethod.GET,  "/api/tags/**").permitAll()
-                        .requestMatchers(HttpMethod.GET,  "/api/clips/feed").permitAll()
-                        .requestMatchers(HttpMethod.GET,  "/api/clips/*/comments/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/view").permitAll()
+                        // ====== [클립/태그 공개 엔드포인트] ======
+                        .requestMatchers(HttpMethod.GET, "/api/tags/**").permitAll()                 // 태그 목록/검색
+                        .requestMatchers(HttpMethod.GET, "/api/clips/feed").permitAll()              // 피드
+                        .requestMatchers(HttpMethod.GET, "/api/clips/*/comments/**").permitAll()     // 댓글/대댓글 조회
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/view").permitAll()           // 조회수 증가
 
-                        // 반드시 인증 필요한 API
-                        // - 내 정보/프로필 관련
-                        .requestMatchers("/api/me/**").authenticated()
-                        // - 알림 전부
-                        .requestMatchers("/api/notifications/**").authenticated()
-                        // - 팔로우/언팔/관계
-                        .requestMatchers("/api/members/*/follow**").authenticated()
-                        .requestMatchers("/api/members/*/relation").authenticated()
-                        // - 클립 생성/좋아요/댓글/대댓글
-                        .requestMatchers(HttpMethod.POST, "/api/clips").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/like").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments/*/replies").authenticated()
-                        // - 예약/내 예약
+                        // ====== [클립/태그 인증 필요한 엔드포인트] ======
+                        .requestMatchers(HttpMethod.POST, "/api/clips").authenticated()              // 업로드
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/like").authenticated()       // 좋아요 토글
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments").authenticated()   // 댓글 작성
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments/*/replies").authenticated() // 대댓글
+
+                        // 예약 API (기존 정책 유지)
                         .requestMatchers(HttpMethod.POST, "/api/reservations").authenticated()
                         .requestMatchers(HttpMethod.GET,  "/api/reservations/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/reservations/*/cancel").authenticated()
 
-                        // 그 외는 인증 필요
+                        // 그 외 모두 인증
                         .anyRequest().authenticated()
                 )
-
-                // 예외 처리
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((req, res, ex) -> res.sendError(401))
                         .accessDeniedHandler((req, res, ex) -> res.sendError(403))
                 )
-
-                // JWT 필터
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(
-                                jwtTokenProvider, memberDetailsService, redisTemplate, ignoreRedisErrorsInDev
-                        ),
+                        new JwtAuthenticationFilter(jwtTokenProvider, memberDetailsService, redisTemplate, ignoreRedisErrorsInDev),
                         UsernamePasswordAuthenticationFilter.class
                 );
 

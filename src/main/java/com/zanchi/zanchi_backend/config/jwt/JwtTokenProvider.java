@@ -5,42 +5,39 @@ import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.Value;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
 
 @Component
 public class JwtTokenProvider {
 
-    @Value("${jwt.secret}")                 // application.properties 에서 주입
-    private String secret;
-
+    // @Value("${jwt.secret}") 나중에 배포할 때는 시크릿 키를 yml 파일에서 고정시키는 것이 좋다
     private Key secretKey;
 
     @PostConstruct
     public void init() {
-        // HS256은 최소 256bit(32byte) 이상 키 필요
-        this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.secretKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
     }
 
     public String createToken(String loginId) {
         Date now = new Date();
-        long expirationMs = 1000L * 60 * 60; // 1h
+        // 시간 설정을 통해서 토큰 인증 시간 조절 가능
+        long expirationMs = 1000 * 60 * 60;
         Date expiry = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
                 .setSubject(loginId)
                 .setIssuedAt(now)
                 .setExpiration(expiry)
-                .signWith(secretKey, SignatureAlgorithm.HS256)
+                .signWith(secretKey)
                 .compact();
     }
 
     public String getLoginIdFromToken(String token) {
-        return Jwts.parserBuilder()         // parserBuilder 사용
+        return Jwts.parserBuilder()
                 .setSigningKey(secretKey)
                 .build()
                 .parseClaimsJws(token)
@@ -50,10 +47,7 @@ public class JwtTokenProvider {
 
     public boolean validateToken(String token) {
         try {
-            Jwts.parserBuilder()
-                    .setSigningKey(secretKey)
-                    .build()
-                    .parseClaimsJws(token);
+            Jwts.parserBuilder().setSigningKey(secretKey).build().parseClaimsJws(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             return false;
@@ -61,28 +55,33 @@ public class JwtTokenProvider {
     }
 
     public String extractAccessTokenFromCookie(HttpServletRequest request) {
-        // 1) 쿠키 우선 (운영 권장)
-        if (request.getCookies() != null) {
-            for (Cookie cookie : request.getCookies()) {
-                if ("accessToken".equals(cookie.getName())) {
-                    return cookie.getValue();
-                }
-            }
-        }
-        // 2) (옵션) Authorization: Bearer ... 허용 - 개발/테스트용
+
+        // 운영에서는 Authorization 헤더 제거 권장
+
+        // 1. Authorization 헤더 검사 (테스트용)
         String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         }
+
+        // 2. accessToken 쿠키 검사 (실제 운영용)
+        if (request.getCookies() != null) {
+            for (Cookie cookie : request.getCookies()) {
+                if (cookie.getName().equals("accessToken")) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
         return null;
     }
 
     public long getRemainingTime(String token) {
-        var claims = Jwts.parserBuilder()   // parser() → parserBuilder()
+        return Jwts.parser()
                 .setSigningKey(secretKey)
-                .build()
                 .parseClaimsJws(token)
-                .getBody();
-        return claims.getExpiration().getTime() - System.currentTimeMillis();
+                .getBody()
+                .getExpiration()
+                .getTime() - System.currentTimeMillis();
     }
 }
