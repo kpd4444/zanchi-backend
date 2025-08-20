@@ -24,6 +24,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     int markAllRead(@Param("rid") Long receiverId);
 
     Optional<Notification> findTop1ByReceiverIdOrderByIdDesc(Long receiverId);
+    Optional<Notification> findByIdAndReceiverId(Long id, Long receiverId);
 
     @Modifying
     @Query("delete from Notification n where n.createdAt < :threshold")

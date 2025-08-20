@@ -1,5 +1,6 @@
 package com.zanchi.zanchi_backend.domain.notification.service;
 
+import com.zanchi.zanchi_backend.config.exception.ApiException;
 import com.zanchi.zanchi_backend.domain.notification.entity.Notification;
 import com.zanchi.zanchi_backend.domain.notification.entity.NotificationType;
 import com.zanchi.zanchi_backend.domain.notification.repository.NotificationRepository;
@@ -7,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -157,5 +159,14 @@ public class NotificationService {
                 saved.getId(), saved.getType(), saved.getActorId(), saved.getReceiverId(),
                 saved.getClipId(), saved.getCommentId());
         return saved;
+    }
+
+    // 삭제
+    @Transactional
+    public void delete(Long userId, Long notificationId) {
+        Notification notification = notificationRepository.findByIdAndReceiverId(notificationId, userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Notification not found"));
+
+        notificationRepository.delete(notification);
     }
 }
