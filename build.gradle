@@ -23,6 +23,8 @@ repositories {
 	mavenCentral()
 }
 
+
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	compileOnly 'org.projectlombok:lombok'
@@ -44,6 +46,15 @@ dependencies {
 
 	//Redis 의존성
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	//spring Ai 기능
+	implementation platform("org.springframework.ai:spring-ai-bom:1.0.1")
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+
+
+	implementation 'org.springframework.boot:spring-boot-starter-webflux' // WebClient
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
 }
 
 tasks.named('test') {
