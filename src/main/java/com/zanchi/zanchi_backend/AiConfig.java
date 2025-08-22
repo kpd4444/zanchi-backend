@@ -4,8 +4,7 @@ import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -19,10 +18,7 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class AiConfig {
 
-    @Bean
-    ChatClient chatClient(ChatClient.Builder builder) {
-        return builder.build();
-    }
+
 
     // Kakao Local API 호출용 WebClient
     @Bean(name = "kakaoWebClient")

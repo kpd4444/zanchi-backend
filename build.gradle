@@ -48,8 +48,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
 	//spring Ai 기능
+	// Spring AI 1.0.1 BOM (하나만!)
 	implementation platform("org.springframework.ai:spring-ai-bom:1.0.1")
-	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+
+	// OpenAI Starter (버전 없음 — BOM이 가져감)
+	//implementation "org.springframework.ai:spring-ai-openai-spring-boot-starter"
 
 
 	implementation 'org.springframework.boot:spring-boot-starter-webflux' // WebClient
