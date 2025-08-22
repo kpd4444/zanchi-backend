@@ -5,7 +5,6 @@ on:
     branches: [ "main" ]
 
 env:
-  # 원격 서버 설정
   REMOTE_DIR: /opt/app
   SERVICE_NAME: myapp
 
@@ -17,26 +16,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ✅ gradlew가 있는 디렉터리를 자동으로 찾아 PROJECT_DIR로 설정
+      # gradlew 위치 자동 탐지 (필요시 PROJECT_DIR를 직접 . 로 바꿔도 됩니다)
       - name: Detect project directory
         shell: bash
         run: |
           set -e
-          # 루트에 gradlew가 있으면 .
-          if [[ -f "./gradlew" ]]; then
-            DIR="."
-          else
-            # 리포지토리 내에서 gradlew가 들어있는 디렉터리 검색
+          if [[ -f "./gradlew" ]]; then DIR="."; else
             FOUND=$(git ls-files | grep -E '(^|/)(gradlew)$' || true)
-            if [[ -z "$FOUND" ]]; then
-              echo "gradlew not found. Is this a Gradle project?"; exit 1
-            fi
-            # 가장 첫 후보의 상위 디렉터리 사용
+            [[ -z "$FOUND" ]] && { echo "gradlew not found"; exit 1; }
             DIR=$(dirname "$(echo "$FOUND" | head -n1)")
           fi
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
           echo "Detected PROJECT_DIR=$DIR"
-          ls -la "$DIR"
 
       - name: Set up JDK 21 (Temurin) + Gradle cache
         uses: actions/setup-java@v4
@@ -52,12 +43,21 @@ jobs:
           ./gradlew clean bootJar -x test
           ls -lh build/libs/
 
+      # ✅ SSH 키를 파일로 저장하여 멀티라인 문제 방지
+      - name: Write SSH key
+        shell: bash
+        run: |
+          echo "${{ secrets.EC2_PRIVATE_KEY }}" > key.pem
+          chmod 600 key.pem
+          # 크기 확인(내용은 마스킹됨) — 0이면 Secret이 비어있는 것
+          wc -c key.pem
+
       - name: Prepare remote dir (AL2023 over SSH)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}         # 15.165.170.13
-          username: ${{ secrets.EC2_USER }}     # ec2-user
-          key: ${{ secrets.EC2_PRIVATE_KEY }}   # pem 내용 전체
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key_path: key.pem
           script: |
             sudo mkdir -p ${{ env.REMOTE_DIR }}/upload
             sudo rm -f ${{ env.REMOTE_DIR }}/upload/*.jar
@@ -67,7 +67,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          key_path: key.pem
           source: "${{ env.PROJECT_DIR }}/build/libs/*.jar"
           target: "${{ env.REMOTE_DIR }}/upload"
 
@@ -76,7 +76,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          key_path: key.pem
           script_stop: true
           script: |
             set -e
