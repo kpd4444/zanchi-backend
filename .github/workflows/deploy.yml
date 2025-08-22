@@ -16,7 +16,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # gradlew 위치 자동 탐지 (원하면 PROJECT_DIR를 직접 "."로 고정해도 됩니다)
       - name: Detect project directory
         shell: bash
         run: |
@@ -43,16 +42,19 @@ jobs:
           ./gradlew clean bootJar -x test
           ls -lh build/libs/
 
+      # ✅ 업로드 폴더 소유권을 ec2-user로 변경
       - name: Prepare remote dir (AL2023 over SSH)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}       # 15.165.170.13
-          username: ${{ secrets.EC2_USER }}   # ec2-user
-          key: ${{ secrets.EC2_PRIVATE_KEY }} # pem 전체 내용 (BEGIN~END)
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
           script: |
             sudo mkdir -p ${{ env.REMOTE_DIR }}/upload
-            sudo rm -f ${{ env.REMOTE_DIR }}/upload/*.jar
+            sudo chown -R ec2-user:ec2-user ${{ env.REMOTE_DIR }}/upload
+            rm -f ${{ env.REMOTE_DIR }}/upload/*.jar
 
+      # ✅ 디렉토리 계층을 제거하고 JAR만 떨어뜨리기(strip_components)
       - name: Upload JAR to EC2 (SCP)
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -60,7 +62,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           source: "${{ env.PROJECT_DIR }}/build/libs/*.jar"
-          target: "${{ env.REMOTE_DIR }}/upload"
+          target: "${{ env.REMOTE_DIR }}/upload/"
+          strip_components: 2     # build/libs/ 제거 (필요시 3로 조정)
 
       - name: Move & restart service (systemd on AL2023)
         uses: appleboy/ssh-action@v1.0.3
