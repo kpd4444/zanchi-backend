@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # gradlew 위치 자동 탐지 (필요시 PROJECT_DIR를 직접 . 로 바꿔도 됩니다)
+      # gradlew 위치 자동 탐지 (원하면 PROJECT_DIR를 직접 "."로 고정해도 됩니다)
       - name: Detect project directory
         shell: bash
         run: |
@@ -43,21 +43,12 @@ jobs:
           ./gradlew clean bootJar -x test
           ls -lh build/libs/
 
-      # ✅ SSH 키를 파일로 저장하여 멀티라인 문제 방지
-      - name: Write SSH key
-        shell: bash
-        run: |
-          echo "${{ secrets.EC2_PRIVATE_KEY }}" > key.pem
-          chmod 600 key.pem
-          # 크기 확인(내용은 마스킹됨) — 0이면 Secret이 비어있는 것
-          wc -c key.pem
-
       - name: Prepare remote dir (AL2023 over SSH)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key_path: key.pem
+          host: ${{ secrets.EC2_HOST }}       # 15.165.170.13
+          username: ${{ secrets.EC2_USER }}   # ec2-user
+          key: ${{ secrets.EC2_PRIVATE_KEY }} # pem 전체 내용 (BEGIN~END)
           script: |
             sudo mkdir -p ${{ env.REMOTE_DIR }}/upload
             sudo rm -f ${{ env.REMOTE_DIR }}/upload/*.jar
@@ -67,7 +58,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key_path: key.pem
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
           source: "${{ env.PROJECT_DIR }}/build/libs/*.jar"
           target: "${{ env.REMOTE_DIR }}/upload"
 
@@ -76,7 +67,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key_path: key.pem
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
           script_stop: true
           script: |
             set -e
