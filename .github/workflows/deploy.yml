@@ -2,20 +2,41 @@ name: Deploy to AWS EC2
 
 on:
   push:
-    branches: [ "main" ]   # main 브랜치 푸시 시 배포
+    branches: [ "main" ]
 
 env:
-  PROJECT_DIR: zanchi-backend-main/zanchi-backend-main   # ← 네 프로젝트 루트
+  # 원격 서버 설정
   REMOTE_DIR: /opt/app
   SERVICE_NAME: myapp
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest   # CI 러너 OS (배포 대상과 무관)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ✅ gradlew가 있는 디렉터리를 자동으로 찾아 PROJECT_DIR로 설정
+      - name: Detect project directory
+        shell: bash
+        run: |
+          set -e
+          # 루트에 gradlew가 있으면 .
+          if [[ -f "./gradlew" ]]; then
+            DIR="."
+          else
+            # 리포지토리 내에서 gradlew가 들어있는 디렉터리 검색
+            FOUND=$(git ls-files | grep -E '(^|/)(gradlew)$' || true)
+            if [[ -z "$FOUND" ]]; then
+              echo "gradlew not found. Is this a Gradle project?"; exit 1
+            fi
+            # 가장 첫 후보의 상위 디렉터리 사용
+            DIR=$(dirname "$(echo "$FOUND" | head -n1)")
+          fi
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          echo "Detected PROJECT_DIR=$DIR"
+          ls -la "$DIR"
 
       - name: Set up JDK 21 (Temurin) + Gradle cache
         uses: actions/setup-java@v4
@@ -34,8 +55,8 @@ jobs:
       - name: Prepare remote dir (AL2023 over SSH)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}         # 예: 15.165.170.13
-          username: ${{ secrets.EC2_USER }}     # 예: ec2-user
+          host: ${{ secrets.EC2_HOST }}         # 15.165.170.13
+          username: ${{ secrets.EC2_USER }}     # ec2-user
           key: ${{ secrets.EC2_PRIVATE_KEY }}   # pem 내용 전체
           script: |
             sudo mkdir -p ${{ env.REMOTE_DIR }}/upload
@@ -67,5 +88,4 @@ jobs:
             sudo systemctl restart ${{ env.SERVICE_NAME }}
             sleep 3
             sudo systemctl status ${{ env.SERVICE_NAME }} --no-pager | head -n 20
-            # 내부 헬스 확인(필요 시 엔드포인트 바꿔도 됨)
             curl -sI http://127.0.0.1:8080/ | head -n 1 || true
