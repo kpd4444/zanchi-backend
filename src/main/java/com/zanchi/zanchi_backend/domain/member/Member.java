@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Setter
 @Entity
 @Table(
@@ -43,6 +45,20 @@ public class Member {
     @Column(nullable = false)
     @Builder.Default
     private Integer point = 0;
+
+    /* -------------------- 신규 추가 필드 -------------------- */
+
+    @Column(name = "first_login_at")
+    private LocalDateTime firstLoginAt; // 최초 로그인 시각 (null이면 아직 첫 로그인 전)
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;  // 마지막 로그인 시각
+
+    @Column(name = "login_count", nullable = false)
+    @Builder.Default
+    private Integer loginCount = 0;     // 총 누적 로그인 횟수
+
+    /* -------------------- 도메인 메서드 -------------------- */
 
     public void addPoint(int amount) {
         this.point += amount;

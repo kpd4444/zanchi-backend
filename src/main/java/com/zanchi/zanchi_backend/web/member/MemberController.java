@@ -12,8 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Map;
@@ -29,8 +27,6 @@ public class MemberController {
 
     @PostMapping("/signup")
     public ResponseEntity<?> signup(@RequestBody @Valid MemberForm form, BindingResult bindingResult) {
-
-        // 1) 유효성 검증 실패
         if (bindingResult.hasErrors()) {
             String errors = bindingResult.getFieldErrors().stream()
                     .map(error -> error.getField() + ": " + error.getDefaultMessage())
@@ -39,14 +35,11 @@ public class MemberController {
         }
 
         try {
-            // 2) 회원가입 처리
             memberService.signup(form);
             return ResponseEntity.ok(Map.of("status", "success", "message", "회원가입 성공"));
         } catch (IllegalArgumentException e) {
-            // 3) 아이디 중복 등 비즈니스 오류
             return ResponseEntity.badRequest().body(Map.of("status", "fail", "message", e.getMessage()));
         } catch (Exception e) {
-            // 4) 서버 오류
             return ResponseEntity.status(500).body(Map.of("status", "fail", "message", "서버 오류 발생"));
         }
     }
@@ -72,7 +65,7 @@ public class MemberController {
     @PatchMapping("/name")
     public ResponseEntity<?> changeMyName(
             @Valid @RequestBody ChangeNameRequest req,
-            @AuthenticationPrincipal(expression = "member.id") Long meId // 프로젝트의 Principal 구조에 맞춘 SpEL
+            @AuthenticationPrincipal(expression = "member.id") Long meId
     ) {
         if (meId == null) {
             return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
@@ -80,4 +73,36 @@ public class MemberController {
         ChangeNameResponse res = memberService.changeName(meId, req.name());
         return ResponseEntity.ok(res);
     }
+
+    @GetMapping("/members/{id}/summary")
+    public ResponseEntity<PublicMemberSummary> getPublicSummary(@PathVariable Long id) {
+        return memberRepository.findById(id)
+                .map(m -> ResponseEntity.ok(PublicMemberSummary.of(m)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/members/summaries")
+    public List<PublicMemberSummary> getSummaries(@RequestBody IdsRequest req) {
+        var ids = (req.ids == null ? List.<Long>of() : req.ids.stream().distinct().toList());
+
+        var map = memberRepository.findAllById(ids).stream()
+                .map(PublicMemberSummary::of)
+                .collect(java.util.stream.Collectors.toMap(PublicMemberSummary::id, s -> s));
+
+        return ids.stream().map(map::get).filter(java.util.Objects::nonNull).toList();
+    }
+
+    private static record PublicMemberSummary(Long id, String name, String avatarUrl) {
+        static PublicMemberSummary of(Member m) {
+            String display = (m.getName() != null && !m.getName().isBlank())
+                    ? m.getName()
+                    : m.getLoginId();
+            String avatar = (m.getAvatarUrl() != null && !m.getAvatarUrl().isBlank())
+                    ? m.getAvatarUrl()
+                    : null;
+            return new PublicMemberSummary(m.getId(), display, avatar);
+        }
+    }
+
+    public static record IdsRequest(List<Long> ids) {}
 }

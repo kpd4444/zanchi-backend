@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -37,4 +38,14 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     // 다수의 로그인ID로 사용자 목록 조회
     @Query("select m from Member m where m.loginId in :handles")
     List<Member> findAllByLoginIdIn(@Param("handles") Collection<String> handles);
+
+    // ===== 추가: 처음 로그인 선점 (first_login_at이 NULL일 때만 세팅) =====
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Member m set m.firstLoginAt = :now where m.id = :memberId and m.firstLoginAt is null")
+    int claimFirstLoginIfAbsent(@Param("memberId") Long memberId, @Param("now") LocalDateTime now);
+
+    // ===== 추가: 로그인 통계 갱신 (login_count++, last_login_at=now) =====
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Member m set m.loginCount = m.loginCount + 1, m.lastLoginAt = :now where m.id = :memberId")
+    int bumpLoginStats(@Param("memberId") Long memberId, @Param("now") LocalDateTime now);
 }
