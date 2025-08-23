@@ -3,8 +3,9 @@ package com.zanchi.zanchi_backend.domain.ai;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 
@@ -17,10 +18,11 @@ public class DateRoutePlanner {
     private final PlaceService placeService;
     private final PlaceEnricher enricher;
     private final WalkEta walkEta;
+    private final AiPlanner aiPlanner;   // ✅ LLM 사용
 
-    // 가중치(원하면 properties로 빼기)
-    private static final double W_RATING = 5.0;   // 평점 1점당
-    private static final double W_REVIEW = 1.2;   // ln(리뷰수+1)
+    // 가중치(폴백용)
+    private static final double W_RATING = 5.0;
+    private static final double W_REVIEW = 1.2;
     private static final double DEFAULT_RATING = 3.9;
 
     /** 개별 핫플 5~6 + 추천코스 2개 */
@@ -29,13 +31,13 @@ public class DateRoutePlanner {
             String cuisine, String what, String finish,
             int radiusM, int candidates
     ) {
+
         // 출발지 카드 정보(주소/URL) 보강
         var startResolved = placeService.lookupOneByNameNear(startName, startLat, startLng);
         String startAddr = startResolved != null ? startResolved.address() : "";
         String startUrl  = startResolved != null ? startResolved.kakaoPlaceUrl() : null;
 
         // ---------- 후보 수집 ----------
-        // mid(중간: 놀거리/볼거리/쉼자리) – 먹을거리면 스킵
         List<PlaceCandidateEnriched> midsEnriched = List.of();
         if (!"먹을거리".equals(what)) {
             var midQuery = mapWhatToQuery(what);
@@ -45,29 +47,59 @@ public class DateRoutePlanner {
             }
         }
 
-        // restaurant
         var restaurants = placeService.searchCandidates(cuisine, startLat, startLng, radiusM, candidates);
-        var rEnriched = enricher.enrichAll(restaurants);
+        var rEnriched   = enricher.enrichAll(restaurants);
 
-        // finish
         var finQuery = mapFinishToQuery(finish);
-        var fins = placeService.searchCandidates(finQuery, startLat, startLng, radiusM, candidates);
+        var fins     = placeService.searchCandidates(finQuery, startLat, startLng, radiusM, candidates);
         var fEnriched = enricher.enrichAll(fins);
 
         if (rEnriched.isEmpty() || fEnriched.isEmpty()) {
             throw new IllegalStateException("주변에 후보가 부족합니다. 키워드를 바꾸거나 반경을 넓혀보세요.");
         }
 
-        // ---------- 개별 핫플 5~6개 구성 ----------
+        // ============== ① LLM에게 재랭킹 + 코스 생성 + 설명 위임 ==============
+        try {
+            // 프론트가 companion/mobility를 아직 안 넘기니 기본값으로 고정
+            String companion = "연인";
+            String mobility  = "도보";
+
+            // 후보를 AiPlanner가 먹는 형태로 변환
+            var ideaRestaurants = toIdeas(rEnriched, "restaurant");
+            var ideaMids        = toIdeas(midsEnriched, "activity");
+            var ideaFinals      = toIdeas(fEnriched, mapFinishRole(finish));
+
+            AiPlanResponse ai = aiPlanner.planTwoRoutes(
+                    companion, mobility,
+                    startName, startLat, startLng,
+                    cuisine, finish, what,
+                    ideaRestaurants, ideaMids, ideaFinals
+            );
+
+            // AI 응답을 우리 응답 타입으로 변환
+            var singles = ai.singles() == null ? List.<PlacePick>of()
+                    : ai.singles().stream().map(this::fromIdea).toList();
+
+            var plans = ai.plans() == null ? List.<DateRoutePlan>of()
+                    : ai.plans().stream().map(this::fromAiPlan).toList();
+
+            // AI가 뭔가라도 만들었다면 바로 반환
+            if (!plans.isEmpty() || !singles.isEmpty()) {
+                return new DateRouteIdeas(singles, plans);
+            }
+            // 비어 있으면 폴백으로 넘어감
+        } catch (Exception ignore) {
+            // 모델 오류/JSON 파싱 실패 등은 조용히 폴백
+        }
+
+        // ============== ② 폴백: 기존 점수식 로직 유지 ==============
         var singles = topSingles(startLat, startLng, midsEnriched, rEnriched, fEnriched, 6);
 
-        // ---------- 코스 스코어링 (상위 2개) ----------
-        var options = new ArrayList<RouteOption>();
+        var options  = new ArrayList<RouteOption>();
         var limitedM = midsEnriched.stream().limit(8).toList();
         var limitedR = rEnriched.stream().limit(10).toList();
         var limitedF = fEnriched.stream().limit(10).toList();
 
-        // mid 있으면 (start→mid→R→F), 없으면 (start→R→F)
         if (limitedM.isEmpty()) {
             for (var r : limitedR) {
                 int s_r = walkEta.estimateMinutes(startLat, startLng, r.lat(), r.lng());
@@ -75,8 +107,7 @@ public class DateRoutePlanner {
                     int r_f = walkEta.estimateMinutes(r.lat(), r.lng(), f.lat(), f.lng());
                     int travel = s_r + r_f;
                     double score = scorePair(r, f, travel);
-                    options.add(new RouteOption(null, r, f, travel, score,
-                            s_r, 0, r_f));
+                    options.add(new RouteOption(null, r, f, travel, score, s_r, 0, r_f));
                 }
             }
         } else {
@@ -88,8 +119,7 @@ public class DateRoutePlanner {
                         int r_f = walkEta.estimateMinutes(r.lat(), r.lng(), f.lat(), f.lng());
                         int travel = s_m + m_r + r_f;
                         double score = scoreTriple(m, r, f, travel);
-                        options.add(new RouteOption(m, r, f, travel, score,
-                                s_m, m_r, r_f));
+                        options.add(new RouteOption(m, r, f, travel, score, s_m, m_r, r_f));
                     }
                 }
             }
@@ -97,30 +127,24 @@ public class DateRoutePlanner {
 
         options.sort(comparingDouble(RouteOption::score).reversed());
 
-        // 다양성 확보: 레스토랑/피니시가 겹치지 않게 상위 2개
         var picked = new ArrayList<RouteOption>(2);
-        var usedR = new HashSet<String>();
-        var usedF = new HashSet<String>();
+        var usedR  = new HashSet<String>();
+        var usedF  = new HashSet<String>();
         for (var op : options) {
             if (picked.size() == 2) break;
-            String rKey = op.r().name();
-            String fKey = op.f().name();
-            if (usedR.contains(rKey) || usedF.contains(fKey)) continue;
+            if (usedR.contains(op.r().name()) || usedF.contains(op.f().name())) continue;
             picked.add(op);
-            usedR.add(rKey);
-            usedF.add(fKey);
+            usedR.add(op.r().name());
+            usedF.add(op.f().name());
         }
-        if (picked.isEmpty() && !options.isEmpty()) picked.add(options.get(0)); // 최소 1개
+        if (picked.isEmpty() && !options.isEmpty()) picked.add(options.get(0));
 
         var plans = new ArrayList<DateRoutePlan>();
-        for (int i = 0; i < picked.size(); i++) {
-            var op = picked.get(i);
+        for (var op : picked) {
             var steps = new ArrayList<DateRoutePlan.Step>();
             steps.add(new DateRoutePlan.Step("start", startName, startAddr, startLat, startLng,
                     startUrl, mapLink(startName, startLat, startLng), null, null));
-            if (op.m() != null) {
-                steps.add(toStep("activity", op.m()));
-            }
+            if (op.m() != null) steps.add(toStep("activity", op.m()));
             steps.add(toStep("restaurant", op.r()));
             steps.add(toStep(mapFinishRole(finish), op.f()));
 
@@ -137,105 +161,60 @@ public class DateRoutePlanner {
             int radiusM, int candidates
     ) {
         var ideas = ideasWalking(startName, startLat, startLng, cuisine, what, finish, radiusM, candidates);
-        return ideas.plans().isEmpty()
-                ? new DateRoutePlan(List.of(), 0, "추천 코스를 찾지 못했습니다.")
-                : ideas.plans().get(0);
+        if (ideas.plans() == null || ideas.plans().isEmpty()) {
+            return new DateRoutePlan(List.of(), 0, "추천 코스를 찾지 못했습니다.");
+        }
+        return ideas.plans().get(0);
     }
 
-//    public DateRoutePlan planWalking(
-//            String startName, double startLat, double startLng,
-//            String cuisine, String what, String finish,
-//            int radiusM, int candidates
-//    ) {
-//        // 0) 출발지 주소/URL 보강
-//        var startResolved = placeService.lookupOneByNameNear(startName, startLat, startLng);
-//        String startAddr = startResolved != null ? startResolved.address() : "";
-//        String startUrl  = startResolved != null ? startResolved.kakaoPlaceUrl() : null;
-//
-//        var steps = new ArrayList<DateRoutePlan.Step>();
-//        steps.add(new DateRoutePlan.Step("start", startName, startAddr, startLat, startLng,
-//                startUrl, mapLink(startName, startLat, startLng), null, null));
-//
-//        // 1) 중간(what) 후보 (먹을거리면 스킵)
-//        PlaceCandidateEnriched bestMid = null;
-//        if (!"먹을거리".equals(what)) {
-//            var midQuery = mapWhatToQuery(what);
-//            if (midQuery != null) {
-//                var mids = placeService.searchCandidates(midQuery, startLat, startLng, radiusM, candidates);
-//                var midsEnriched = enricher.enrichAll(mids).stream().limit(10).toList();
-//                bestMid = pickBestBy(startLat, startLng, midsEnriched);
-//                if (bestMid != null) {
-//                    steps.add(new DateRoutePlan.Step("activity", bestMid.name(), bestMid.address(),
-//                            bestMid.lat(), bestMid.lng(),
-//                            preferUrl(bestMid), bestMid.mapLink(), bestMid.rating(), bestMid.userRatingCount()));
-//                    // 이후 기준점을 mid로 이동
-//                    startLat = bestMid.lat();
-//                    startLng = bestMid.lng();
-//                }
-//            }
-//        }
-//
-//        // 2) 식당(사용자 cuisine)
-//        var restaurants = placeService.searchCandidates(cuisine, startLat, startLng, radiusM, candidates);
-//        var rEnriched = enricher.enrichAll(restaurants).stream().limit(10).toList();
-//
-//        // 3) 마무리 후보
-//        var finQuery = mapFinishToQuery(finish); // 술집/카페/디저트/볼링장/공원
-//        var fins = placeService.searchCandidates(finQuery, startLat, startLng, radiusM, candidates);
-//        var fEnriched = enricher.enrichAll(fins).stream().limit(10).toList();
-//
-//        if (rEnriched.isEmpty() || fEnriched.isEmpty()) {
-//            throw new IllegalStateException("주변에 후보가 부족합니다. 키워드를 바꾸거나 반경을 넓혀보세요.");
-//        }
-//
-//        double bestScore = -1e9;
-//        int bestTotalMin = Integer.MAX_VALUE;
-//        PlaceCandidateEnriched bestR = null, bestF = null;
-//
-//        // 4) 조합 평가 (start→(mid)→R→F)
-//        for (var r : rEnriched) {
-//            int s_to_r = (bestMid == null)
-//                    ? walkEta.estimateMinutes(steps.get(0).lat(), steps.get(0).lng(), r.lat(), r.lng())
-//                    : walkEta.estimateMinutes(bestMid.lat(), bestMid.lng(), r.lat(), r.lng());
-//
-//            for (var f : fEnriched) {
-//                int r_to_f = walkEta.estimateMinutes(r.lat(), r.lng(), f.lat(), f.lng());
-//                int s_to_m = (bestMid == null) ? 0
-//                        : walkEta.estimateMinutes(steps.get(0).lat(), steps.get(0).lng(), bestMid.lat(), bestMid.lng());
-//                int travel = s_to_m + s_to_r + r_to_f;
-//
-//                double rRating = nz(r.rating(), DEFAULT_RATING);
-//                double fRating = nz(f.rating(), DEFAULT_RATING);
-//                int rCnt = nz(r.userRatingCount(), 0);
-//                int fCnt = nz(f.userRatingCount(), 0);
-//
-//                double score = -travel
-//                        + W_RATING * (rRating + fRating)
-//                        + W_REVIEW * (Math.log(1 + rCnt) + Math.log(1 + fCnt));
-//
-//                if (score > bestScore) {
-//                    bestScore = score;
-//                    bestTotalMin = travel;
-//                    bestR = r; bestF = f;
-//                }
-//            }
-//        }
-//
-//        // 5) 스텝 구성
-//        if (bestR != null) {
-//            steps.add(new DateRoutePlan.Step("restaurant", bestR.name(), bestR.address(),
-//                    bestR.lat(), bestR.lng(), preferUrl(bestR), bestR.mapLink(),
-//                    bestR.rating(), bestR.userRatingCount()));
-//        }
-//        if (bestF != null) {
-//            String role = mapFinishRole(finish); // bar | cafe | dessert | activity
-//            steps.add(new DateRoutePlan.Step(role, bestF.name(), bestF.address(),
-//                    bestF.lat(), bestF.lng(), preferUrl(bestF), bestF.mapLink(),
-//                    bestF.rating(), bestF.userRatingCount()));
-//        }
-//
-//        return new DateRoutePlan(steps, bestTotalMin);
-//    }
+    // ----------------- AI ↔ Our DTO 변환 -----------------
+
+    private static String ideaId(String name, double lat, double lng) {
+        // name|lat|lng 를 url-safe base64로
+        String raw = name + "|" + String.format("%.6f", lat) + "|" + String.format("%.6f", lng);
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private List<IdeaItem> toIdeas(List<PlaceCandidateEnriched> src, String role) {
+        return src == null ? List.of() : src.stream()
+                .map(p -> new IdeaItem(
+                        ideaId(p.name(), p.lat(), p.lng()),   // ★ id
+                        role,
+                        p.name(), p.address(),
+                        p.lat(), p.lng(),
+                        preferUrl(p),
+                        p.mapLink(),
+                        p.rating(), p.userRatingCount()
+                ))
+                .toList();
+    }
+
+    private PlacePick fromIdea(IdeaItem x) {
+        return new PlacePick(
+                x.role(), x.name(), x.address(),
+                x.lat(), x.lng(),
+                x.externalUrl(), x.mapLink(),
+                x.rating(), x.ratingCount()
+        );
+    }
+
+    private DateRoutePlan fromAiPlan(AiPlanResponse.Plan p) {
+        var steps = p.steps() == null ? List.<DateRoutePlan.Step>of()
+                : p.steps().stream()
+                .map(s -> new DateRoutePlan.Step(
+                        s.role(), s.name(), s.address(),
+                        s.lat(), s.lng(),
+                        s.externalUrl(), s.mapLink(),
+                        s.rating(), s.ratingCount()))
+                .toList();
+
+        return new DateRoutePlan(steps,
+                p.totalTravelMinutes() == null ? 0 : p.totalTravelMinutes(),
+                p.explain());
+    }
+
+    // ----------------- 이하 폴백(기존 로직) 유틸 -----------------
 
     private List<PlacePick> topSingles(
             double baseLat, double baseLng,
@@ -245,13 +224,10 @@ public class DateRoutePlanner {
             int take
     ) {
         var list = new ArrayList<PlacePick>();
-
-        // 각 카테고리에서 2개씩 뽑아 섞기 (있으면)
-        list.addAll(pickBest(mids, baseLat, baseLng, "mid", 2));
+        list.addAll(pickBest(mids,  baseLat, baseLng, "mid",        2));
         list.addAll(pickBest(rests, baseLat, baseLng, "restaurant", 2));
-        list.addAll(pickBest(fins, baseLat, baseLng, "finish", 2));
+        list.addAll(pickBest(fins,  baseLat, baseLng, "finish",     2));
 
-        // 중복 제거(이름 기준) 및 상위 N
         var seen = new HashSet<String>();
         var result = new ArrayList<PlacePick>();
         for (var p : list) {
@@ -286,7 +262,6 @@ public class DateRoutePlanner {
     }
 
     private double scoreTriple(PlaceCandidateEnriched m, PlaceCandidateEnriched r, PlaceCandidateEnriched f, int travel) {
-        // mid 평점은 보너스(과하지 않게 0.5배)
         double mr = nz(m.rating(), DEFAULT_RATING);
         double rr = nz(r.rating(), DEFAULT_RATING);
         double fr = nz(f.rating(), DEFAULT_RATING);
@@ -305,7 +280,6 @@ public class DateRoutePlanner {
                 * Math.sin(dLon/2)*Math.sin(dLon/2);
         return 2*R*Math.asin(Math.sqrt(a));
     }
-
     private static double nz(Double v, double def){ return v==null?def:v; }
     private static int nz(Integer v, int def){ return v==null?def:v; }
 
@@ -343,23 +317,22 @@ public class DateRoutePlanner {
         return p.googleMapsUri() != null ? p.googleMapsUri() : p.kakaoPlaceUrl();
     }
 
-    // 설명 문구 생성 (Spring-AI 붙이면 여기를 LLM 호출로 교체)
+    // 폴백 설명 생성(LLM 실패 시)
     private String makeExplain(String startName, String what, String cuisine, String finish, RouteOption op) {
         var sb = new StringBuilder();
         sb.append("출발지 ").append(startName).append("에서 ");
         if (op.m != null) {
-            sb.append(op.s_m).append("분 이동해 ").append(op.m.name()).append("에서 ");
-            sb.append(what).append(" 즐기고, ");
-            sb.append(op.m_r).append("분 이동해 ").append(op.r.name()).append(" (").append(cuisine).append(")에서 식사, ");
+            sb.append(op.s_m).append("분 이동해 ").append(op.m.name()).append("에서 ")
+                    .append(what).append(" 즐기고, ")
+                    .append(op.m_r).append("분 이동해 ").append(op.r.name()).append(" (").append(cuisine).append(")에서 식사, ");
         } else {
             sb.append(op.s_m).append("분 이동해 ").append(op.r.name()).append(" (").append(cuisine).append(")에서 식사 후, ");
         }
-        sb.append(op.r_f).append("분 이동해 ").append(op.f.name()).append("에서 ").append(finish).append("로 마무리.");
-        sb.append(" 총 도보 약 ").append(op.travel).append("분.");
+        sb.append(op.r_f).append("분 이동해 ").append(op.f.name()).append("에서 ").append(finish).append("로 마무리. ")
+                .append("총 도보 약 ").append(op.travel).append("분.");
         return sb.toString();
     }
 
-    // 내부 옵션 구조체
     private record RouteOption(
             PlaceCandidateEnriched m,
             PlaceCandidateEnriched r,
@@ -367,11 +340,5 @@ public class DateRoutePlanner {
             int travel,
             double score,
             int s_m, int m_r, int r_f
-    ) {
-        public PlaceCandidateEnriched m(){ return m; }
-        public PlaceCandidateEnriched r(){ return r; }
-        public PlaceCandidateEnriched f(){ return f; }
-        public int travel(){ return travel; }
-        public double score(){ return score; }
-    }
+    ) { }
 }

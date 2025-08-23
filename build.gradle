@@ -31,18 +31,19 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
-	// WebClient 사용을 위한 WebFlux(서버는 여전히 Tomcat; WebClient만 활용 가능)
+	// WebClient 용(WebFlux 서버로 쓰는 것 아님)
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 
 	// --- DB drivers ---
 	implementation 'org.mariadb.jdbc:mariadb-java-client:3.3.2'
-	runtimeOnly 'com.h2database:h2'   // h2 프로필에서 임시 운영용
+	implementation 'com.mysql:mysql-connector-j:8.4.0'
+	runtimeOnly 'com.h2database:h2'   // h2 프로필용
 
 	// --- JWT ---
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
-	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
-	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+	runtimeOnly  'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly  'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
 	// --- Lombok ---
 	compileOnly 'org.projectlombok:lombok'
@@ -50,7 +51,8 @@ dependencies {
 
 	// --- Spring AI (BOM으로 버전 정합성 관리) ---
 	implementation platform("org.springframework.ai:spring-ai-bom:1.0.1")
-	// 필요 시 활성화:
+	implementation "org.springframework.ai:spring-ai-starter-model-openai"
+	// 확실하지 않음: 위 artifact 가 해석되지 않으면 아래로 교체하세요(서로 배타적).
 	// implementation "org.springframework.ai:spring-ai-openai-spring-boot-starter"
 
 	// --- Test ---
