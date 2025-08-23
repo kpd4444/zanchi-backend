@@ -35,16 +35,13 @@ public class SecurityConfig {
     @Value("${auth.dev.ignore-redis:false}")
     private boolean ignoreRedisErrorsInDev;
 
-    // 허용 오리진(콤마 구분). 예: http://localhost:3000,http://127.0.0.1:3000
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // CORS 처리
                 .cors(Customizer.withDefaults())
-
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -53,7 +50,7 @@ public class SecurityConfig {
                         // preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // 정적 리소스(필요한 페이지만 허용 중)
+                        // 정적 리소스 공개
                         .requestMatchers(
                                 "/", "/index.html", "/signup.html", "/login.html", "/members.html",
                                 "/reservation-test.html",
@@ -66,6 +63,9 @@ public class SecurityConfig {
                                 "/api/members", "/api/members/**",
                                 "/api/shows/**"
                         ).permitAll()
+
+                        // ====== [여기 추가] S3 Presign (임시 공개) ======
+                        .requestMatchers(HttpMethod.POST, "/api/s3/presign-put", "/s3/presign-put").permitAll()
 
                         // ====== [클립/태그 공개 엔드포인트] ======
                         .requestMatchers(HttpMethod.GET, "/api/tags/**").permitAll()
@@ -102,21 +102,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-
-        // 허용 오리진
         config.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
                 .toList());
-
-        // 메서드/헤더
         config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Requested-With","Accept","Origin"));
-
-        // 쿠키/자격증명 허용 (JWT를 쿠키로 쓴다면 필요)
         config.setAllowCredentials(true);
-
-        // Preflight 캐시
         config.setMaxAge(Duration.ofHours(1));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
