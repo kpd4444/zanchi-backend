@@ -105,6 +105,9 @@ public class SecurityConfig {
                         // 업로드 메타 저장(JSON)과 기타 API는 인증 필요
                         .requestMatchers(HttpMethod.POST, "/api/clips").authenticated()
 
+                        // 개인화 추천 피드
+                        .requestMatchers(HttpMethod.GET, "/api/reco/my-feed").authenticated()
+
                         // 그 외 모두 인증
                         .anyRequest().authenticated()
                 )
