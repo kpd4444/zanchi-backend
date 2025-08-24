@@ -1,3 +1,4 @@
+// src/main/java/com/zanchi/zanchi_backend/reco/PersonalizeConfig.java
 package com.zanchi.zanchi_backend.reco;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -9,13 +10,12 @@ import software.amazon.awssdk.services.personalizeruntime.PersonalizeRuntimeClie
 @Configuration
 public class PersonalizeConfig {
 
-    @Value("${aws.region}")
-    private String region;
-
     @Bean
-    public PersonalizeRuntimeClient personalizeRuntimeClient() {
+    public PersonalizeRuntimeClient personalizeRuntimeClient(
+            @Value("${reco.aws-region:ap-northeast-2}") String region
+    ) {
         return PersonalizeRuntimeClient.builder()
                 .region(Region.of(region))
-                .build(); // 자격증명은 기본 체인 사용 (EC2 역할/환경변수 등)
+                .build(); // 자격증명은 기본 프로바이더 체인 사용
     }
 }
