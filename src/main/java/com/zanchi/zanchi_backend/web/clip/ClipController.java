@@ -198,18 +198,51 @@ public class ClipController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
         if (meId == null) return ResponseEntity.status(401).build();
-        var p = clipService.myClips(meId, PageRequest.of(page, size)).map(ClipFeedRes::of);
-        return ResponseEntity.ok(p);
+
+        Page<Clip> p = clipService.myClips(meId, PageRequest.of(page, size));
+        var ids = p.getContent().stream().map(Clip::getId).toList();
+
+        Set<Long> likedSet = ids.isEmpty() ? Set.of()
+                : new HashSet<>(clipLikeRepository.findLikedClipIds(meId, ids));
+
+        Set<Long> savedSet = ids.isEmpty() ? Set.of()
+                : new HashSet<>(clipSaveRepository.findSavedClipIds(meId, ids));
+
+        return ResponseEntity.ok(
+                p.map(c -> ClipFeedRes.of(
+                        c,
+                        likedSet.contains(c.getId()),
+                        savedSet.contains(c.getId())
+                ))
+        );
     }
 
     // 다른 유저 페이지용(프로필 방문)
     @GetMapping("/api/members/{userId}/clips")
     public ResponseEntity<Page<ClipFeedRes>> userClips(
             @PathVariable Long userId,
+            @AuthenticationPrincipal(expression = "member.id") Long meId, // ← 현재 로그인 사용자(없을 수 있음)
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
-        var p = clipService.myClips(userId, PageRequest.of(page, size)).map(ClipFeedRes::of);
-        return ResponseEntity.ok(p);
+
+        Page<Clip> p = clipService.myClips(userId, PageRequest.of(page, size));
+        var ids = p.getContent().stream().map(Clip::getId).toList();
+
+        Set<Long> likedSet = (meId != null && !ids.isEmpty())
+                ? new HashSet<>(clipLikeRepository.findLikedClipIds(meId, ids))
+                : Set.of();
+
+        Set<Long> savedSet = (meId != null && !ids.isEmpty())
+                ? new HashSet<>(clipSaveRepository.findSavedClipIds(meId, ids))
+                : Set.of();
+
+        return ResponseEntity.ok(
+                p.map(c -> ClipFeedRes.of(
+                        c,
+                        likedSet.contains(c.getId()),
+                        savedSet.contains(c.getId())
+                ))
+        );
     }
 
     // 검색
