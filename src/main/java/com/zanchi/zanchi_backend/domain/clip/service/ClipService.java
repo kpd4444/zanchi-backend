@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Slf4j
 @Service
@@ -456,6 +458,40 @@ public class ClipService {
     @Transactional(readOnly = true)
     public Clip findById(Long clipId) {
         return clipRepository.findById(clipId).orElseThrow();
+    }
+
+    @Transactional
+    public Clip createFromS3ByLoginId(String loginId, String caption, String fileKey, Long showId) {
+        if (fileKey == null || fileKey.isBlank()) {
+            throw new IllegalArgumentException("fileKey is required");
+        }
+        // 로그인 아이디로 멤버 조회
+        Member uploader = memberRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("member not found: " + loginId));
+
+        // URL 생성 (공백 대비)
+        String safeKey = URLEncoder.encode(fileKey, StandardCharsets.UTF_8).replace("+", "%20");
+        String s3Url = "https://zanchi-prod-assets-855300093107-apne2-v2.s3.ap-northeast-2.amazonaws.com/" + safeKey;
+
+        Clip clip = Clip.builder()
+                .uploader(uploader)
+                .caption(caption)
+                .videoUrl(s3Url)
+                .build();
+
+        Clip saved = clipRepository.save(clip);
+
+        // 태그/멘션/Personalize 동기화 (기존 로직 그대로)
+        hashtagService.syncClipTags(saved, caption);
+        upsertMentions(saved.getId(), caption);
+        try {
+            String genres = extractGenresForPersonalize(caption);
+            personalizeCatalogService.upsertClip(saved, genres);
+        } catch (Exception e) {
+            log.warn("Personalize upsert 실패: {}", e.getMessage());
+        }
+
+        return saved;
     }
 
 }

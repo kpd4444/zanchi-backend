@@ -359,16 +359,16 @@ public class ClipController {
     // A) S3 업로드 완료 후 메타 저장(기존 multipart와 같은 URL이지만 consumes로 구분)
     @PostMapping(path = "/api/clips", consumes = "application/json")
     public ResponseEntity<?> createFromS3(
-            @AuthenticationPrincipal(expression = "member.id") Long memberId,
+            Authentication auth,
             @Valid @RequestBody ClipCreateReq req) {
 
-        if (memberId == null) {
-            return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED","msg","로그인이 필요합니다."));
+        if (auth == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED", "msg", "로그인이 필요합니다."));
         }
-        // req.fileKey = "clips/<UUID>.mp4"
-        Clip saved = clipService.createFromS3(memberId, req.getCaption(), req.getFileKey(), req.getShowId());
-        // 기존과 동일하게 ClipUploadRes를 재사용 (내부에서 videoUrl 등 포함)
-        return ResponseEntity.ok(ClipUploadRes.of(saved));
+
+        String loginId = auth.getName(); // ← 여기!
+        Clip saved = clipService.createFromS3ByLoginId(loginId, req.getCaption(), req.getFileKey(), req.getShowId());
+        return ResponseEntity.ok(ClipUploadRes.of(saved)); // {id, videoUrl, caption}
     }
 
     // B) 재생(무중단 전환용 302 redirect)
