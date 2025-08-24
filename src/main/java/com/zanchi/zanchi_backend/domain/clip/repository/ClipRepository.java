@@ -1,6 +1,7 @@
 package com.zanchi.zanchi_backend.domain.clip.repository;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
+import com.zanchi.zanchi_backend.domain.clip.dto.ClipSummary;
 import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankItem;
 import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
 import org.springframework.data.domain.Page;
@@ -129,4 +130,55 @@ order by c.likeCount desc, c.createdAt desc
                                                 @Param("start") LocalDateTime start,
                                                 @Param("end")   LocalDateTime end,
                                                 Pageable pageable);
+
+    @Query(
+            value = """
+        select new com.zanchi.zanchi_backend.domain.clip.dto.ClipSummary(
+            c.id,
+            u.id,
+            case when (u.name is null or u.name = '') then u.loginId else u.name end,
+            u.avatarUrl,
+            c.videoUrl,
+            coalesce(c.caption, ''),
+            c.likeCount,
+            c.commentCount,
+            c.createdAt
+        )
+        from Clip c
+        join c.uploader u
+        where exists (
+            select 1
+            from MemberFollow f
+            where f.follower.id = :userId
+              and f.following.id = u.id
+        )
+        and (
+            :q = '' or
+            lower(coalesce(c.caption, '')) like lower(concat('%', :q, '%')) or
+            lower(coalesce(u.name, u.loginId, '')) like lower(concat('%', :q, '%')) or
+            lower(coalesce(u.loginId, '')) like lower(concat('%', :q, '%'))
+        )
+        order by c.createdAt desc
+        """,
+            countQuery = """
+        select count(c)
+        from Clip c
+        join c.uploader u
+        where exists (
+            select 1
+            from MemberFollow f
+            where f.follower.id = :userId
+              and f.following.id = u.id
+        )
+        and (
+            :q = '' or
+            lower(coalesce(c.caption, '')) like lower(concat('%', :q, '%')) or
+            lower(coalesce(u.name, u.loginId, '')) like lower(concat('%', :q, '%')) or
+            lower(coalesce(u.loginId, '')) like lower(concat('%', :q, '%'))
+        )
+        """
+    )
+    Page<ClipSummary> findFollowingClips(@Param("userId") Long userId,
+                                         @Param("q") String q,
+                                         Pageable pageable);
 }

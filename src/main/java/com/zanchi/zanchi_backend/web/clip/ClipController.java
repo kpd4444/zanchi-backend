@@ -12,16 +12,14 @@ import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
 import com.zanchi.zanchi_backend.web.clip.dto.ClipRankResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.*;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -267,5 +265,18 @@ public class ClipController {
     public ResponseEntity<MemberSummary> userSummary(@PathVariable Long userId) {
         var user = memberRepository.findById(userId).orElseThrow();
         return ResponseEntity.ok(MemberSummary.of(user)); // avatarUrl 포함되어야 함
+    }
+
+    @GetMapping("/api/me/following/clips")
+    public Page<ClipSummary> myFollowingClips(Authentication auth,
+                                              @RequestParam(defaultValue = "") String q,
+                                              @RequestParam(defaultValue = "0") int page,
+                                              @RequestParam(defaultValue = "20") int size) {
+        String loginId = auth.getName(); // JwtAuthenticationFilter가 세팅
+        Long userId = memberRepository.findIdByLoginId(loginId)
+                .orElseThrow(() -> new IllegalStateException("로그인 사용자 id를 찾을 수 없습니다: " + loginId));
+
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return clipService.followingClips(userId, pageable, q);
     }
 }

@@ -4,7 +4,7 @@ public interface ClipRankView {
     Long getClipId();
     Long getUploaderId();
     String getUploaderName();
-    String getUploaderAvatarUrl(); // ← 추가
-    String getVideoUrl();          // ← 추가
+    String getUploaderAvatarUrl();
+    String getVideoUrl();
     Long getLikeCount();
 }

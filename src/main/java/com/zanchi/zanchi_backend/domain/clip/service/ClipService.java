@@ -1,6 +1,7 @@
 package com.zanchi.zanchi_backend.domain.clip.service;
 
 import com.zanchi.zanchi_backend.domain.clip.*;
+import com.zanchi.zanchi_backend.domain.clip.dto.ClipSummary;
 import com.zanchi.zanchi_backend.domain.clip.repository.*;
 import com.zanchi.zanchi_backend.domain.member.Member;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
@@ -374,6 +375,11 @@ public class ClipService {
         long cnt = likeRepository.countByClipId(clipId);
         Clip clip = clipRepository.findById(clipId).orElseThrow();
         clip.setLikeCount(cnt);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClipSummary> followingClips(Long userId, Pageable pageable, String q) {
+        return clipRepository.findFollowingClips(userId, q == null ? "" : q.trim(), pageable);
     }
 
 }
