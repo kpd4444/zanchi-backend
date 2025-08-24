@@ -7,25 +7,32 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name="clip_save",
-        uniqueConstraints = @UniqueConstraint(name="uk_member_clip", columnNames={"member_id","clip_id"}))
+@Table(
+        name = "clip_save",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_member_clip",
+                columnNames = {"member_id","clip_id"}
+        ),
+        indexes = {
+                @Index(name = "idx_clip_save_member", columnList = "member_id"),
+                @Index(name = "idx_clip_save_clip",   columnList = "clip_id")
+        }
+)
 @Getter @Setter
-@NoArgsConstructor(access= AccessLevel.PROTECTED)
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
 public class ClipSave {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="member_id", nullable=false)
     private Member member;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "clip_id", nullable = false)
+    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="clip_id", nullable=false)
     private Clip clip;
 
     private LocalDateTime createdAt;
 
-    @PrePersist void pre() { if (createdAt==null) createdAt = LocalDateTime.now(); }
+    @PrePersist void pre() { if (createdAt == null) createdAt = LocalDateTime.now(); }
 }

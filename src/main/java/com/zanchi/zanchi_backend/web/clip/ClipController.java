@@ -6,6 +6,7 @@ import com.zanchi.zanchi_backend.domain.clip.dto.*;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
+import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
 import com.zanchi.zanchi_backend.domain.clip.service.ClipService;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
 import com.zanchi.zanchi_backend.domain.member_follow.dto.MemberSummary;
@@ -37,6 +38,7 @@ public class ClipController {
     private final MemberRepository memberRepository;
     private final ClipRepository clipRepository;
     private final ClipLikeRepository clipLikeRepository;
+    private final ClipSaveRepository clipSaveRepository;
 
     // 1) 업로드 (multipart/form-data: video, caption)
     @PostMapping(path = "/api/clips", consumes = "multipart/form-data")
@@ -66,7 +68,15 @@ public class ClipController {
                 ? new HashSet<>(clipLikeRepository.findLikedClipIds(meId, clipIds))
                 : Set.of();
 
-        Page<ClipFeedRes> mapped = p.map(c -> ClipFeedRes.of(c, likedSet.contains(c.getId())));
+        Set<Long> savedSet = (meId != null && !clipIds.isEmpty())
+                ? new HashSet<>(clipSaveRepository.findSavedClipIds(meId, clipIds))
+                : Set.of();
+
+        Page<ClipFeedRes> mapped = p.map(c ->
+                ClipFeedRes.of(c,
+                        likedSet.contains(c.getId()),
+                        savedSet.contains(c.getId()))
+        );
         return ResponseEntity.ok(mapped);
     }
 
@@ -109,10 +119,10 @@ public class ClipController {
         return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
     }
 
-    // 5-1) 댓글 작성
+    // 5-1) 댓글 작성  ← 수정점: Principal 표현식 통일
     @PostMapping("/api/clips/{clipId}/comments")
     public ResponseEntity<?> addComment(@PathVariable Long clipId,
-                                        @AuthenticationPrincipal(expression = "id") Long memberId,
+                                        @AuthenticationPrincipal(expression = "member.id") Long memberId,
                                         @Valid @RequestBody CommentCreateReq req) {
         if (memberId == null) {
             return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));
@@ -134,12 +144,12 @@ public class ClipController {
         return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
     }
 
-    // 대댓글 작성
+    // 대댓글 작성  ← 수정점: Principal 표현식 통일
     @PostMapping("/api/clips/{clipId}/comments/{commentId}/replies")
     public ResponseEntity<?> addReply(
             @PathVariable Long clipId,
             @PathVariable Long commentId,
-            @AuthenticationPrincipal(expression = "id") Long memberId,
+            @AuthenticationPrincipal(expression = "member.id") Long memberId,
             @Valid @RequestBody CommentCreateReq req) {
         if (memberId == null) {
             return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED"));

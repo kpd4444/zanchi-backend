@@ -16,15 +16,21 @@ public record ClipFeedRes(
         String uploaderAvatarUrl,
         Long uploaderId,
         LocalDateTime createdAt,
-        boolean likedByMe                // ← 추가
+        boolean likedByMe,
+        boolean savedByMe   // ← 추가
 ) {
-    // 기존 호출 호환용(비로그인 등): likedByMe=false
+    // 기존 호출 호환용(비로그인 등): likedByMe=false, savedByMe=false
     public static ClipFeedRes of(Clip c) {
-        return of(c, false);
+        return of(c, false, false);
     }
 
-    // 로그인 사용자 기준 likedByMe 전달용
+    // 기존 코드 호환: savedByMe는 기본 false
     public static ClipFeedRes of(Clip c, boolean likedByMe) {
+        return of(c, likedByMe, false);
+    }
+
+    // 신규: likedByMe + savedByMe를 함께 세팅
+    public static ClipFeedRes of(Clip c, boolean likedByMe, boolean savedByMe) {
         var uploader = c.getUploader();
         String author = uploader != null
                 ? (uploader.getName() != null ? uploader.getName() : uploader.getLoginId())
@@ -35,7 +41,6 @@ public record ClipFeedRes(
                 .id(c.getId())
                 .videoUrl(c.getVideoUrl())
                 .caption(c.getCaption())
-                // N+1 방지 겸 일관성: 집계필드 사용 권장
                 .likeCount(c.getLikeCount())
                 .commentCount(c.getCommentCount())
                 .viewCount(c.getViewCount())
@@ -44,6 +49,7 @@ public record ClipFeedRes(
                 .uploaderId(uploader != null ? uploader.getId() : null)
                 .createdAt(c.getCreatedAt())
                 .likedByMe(likedByMe)
+                .savedByMe(savedByMe)
                 .build();
     }
 }
