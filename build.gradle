@@ -62,6 +62,11 @@ dependencies {
 	//--- S3 ---
 	implementation platform("software.amazon.awssdk:bom:2.25.60")
 	implementation "software.amazon.awssdk:s3"
+
+	implementation platform("software.amazon.awssdk:bom:2.26.0")
+	implementation "software.amazon.awssdk:personalizeruntime"
+	// (다음 단계용)
+	// implementation "software.amazon.awssdk:personalizeevents"
 }
 
 tasks.named('test') {

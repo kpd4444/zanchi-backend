@@ -25,7 +25,7 @@ public class JwtTokenProvider {
     public String createToken(String loginId) {
         Date now = new Date();
         // 시간 설정을 통해서 토큰 인증 시간 조절 가능
-        long expirationMs = 1000 * 60 * 60;
+        long expirationMs = 1000 * 60 * 120;
         Date expiry = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
