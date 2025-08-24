@@ -114,12 +114,31 @@ public class ClipController {
     public ResponseEntity<Page<ClipCommentRes>> comments(@PathVariable Long clipId,
                                                          @RequestParam(defaultValue = "0") int page,
                                                          @RequestParam(defaultValue = "20") int size) {
-        Page<ClipComment> p = commentRepository.findByClipIdOrderByIdAsc(clipId, PageRequest.of(page, size));
-        List<ClipCommentRes> list = p.getContent().stream().map(ClipCommentRes::of).toList();
+        // 상위 댓글만 조회 (대댓글 제외)
+        Page<ClipComment> p = commentRepository.findByClipIdAndParentIsNullOrderByIdAsc(
+                clipId, PageRequest.of(page, size)
+        );
+
+        var parents = p.getContent();
+        var parentIds = parents.stream().map(ClipComment::getId).toList();
+
+        // 부모 댓글별 대댓글 개수 일괄 조회 (N+1 방지)
+        var counts = parentIds.isEmpty()
+                ? java.util.Map.<Long, Long>of()
+                : commentRepository.countRepliesByParentIds(parentIds)
+                .stream().collect(java.util.stream.Collectors.toMap(
+                        ReplyCountItem::getParentId,
+                        ReplyCountItem::getCnt
+                ));
+
+        var list = parents.stream()
+                .map(c -> ClipCommentRes.of(c, counts.getOrDefault(c.getId(), 0L)))
+                .toList();
+
         return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
     }
 
-    // 5-1) 댓글 작성  ← 수정점: Principal 표현식 통일
+    // 5-1) 댓글 작성 (Principal 표현식 통일)
     @PostMapping("/api/clips/{clipId}/comments")
     public ResponseEntity<?> addComment(@PathVariable Long clipId,
                                         @AuthenticationPrincipal(expression = "member.id") Long memberId,
@@ -144,7 +163,7 @@ public class ClipController {
         return ResponseEntity.ok(new PageImpl<>(list, p.getPageable(), p.getTotalElements()));
     }
 
-    // 대댓글 작성  ← 수정점: Principal 표현식 통일
+    // 대댓글 작성 (Principal 표현식 통일)
     @PostMapping("/api/clips/{clipId}/comments/{commentId}/replies")
     public ResponseEntity<?> addReply(
             @PathVariable Long clipId,
@@ -328,7 +347,7 @@ public class ClipController {
                                               @RequestParam(defaultValue = "") String q,
                                               @RequestParam(defaultValue = "0") int page,
                                               @RequestParam(defaultValue = "20") int size) {
-        String loginId = auth.getName(); // JwtAuthenticationFilter가 세팅
+        String loginId = auth.getName(); // JwtAuthenticationFilter 가 세팅
         Long userId = memberRepository.findIdByLoginId(loginId)
                 .orElseThrow(() -> new IllegalStateException("로그인 사용자 id를 찾을 수 없습니다: " + loginId));
 

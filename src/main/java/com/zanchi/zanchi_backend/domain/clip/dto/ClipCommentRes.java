@@ -13,9 +13,16 @@ public record ClipCommentRes(
         String authorAvatarUrl,
         String content,
         LocalDateTime createdAt,
-        Long parentId
+        Long parentId,
+        long replyCount   // 대댓글 개수
 ) {
+    // 기존 호출부 호환: 대댓글 개수 모를 때 0으로
     public static ClipCommentRes of(ClipComment c) {
+        return of(c, 0L);
+    }
+
+    // 상위 댓글 목록에서 replyCount 를 함께 세팅
+    public static ClipCommentRes of(ClipComment c, long replyCount) {
         var author = c.getAuthor();
         Long    aid   = (author != null ? author.getId()        : null);
         String  aname = (author != null
@@ -31,6 +38,7 @@ public record ClipCommentRes(
                 .content(c.getContent())
                 .createdAt(c.getCreatedAt())
                 .parentId(c.getParent() != null ? c.getParent().getId() : null)
+                .replyCount(replyCount)
                 .build();
     }
 }

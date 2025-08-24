@@ -11,7 +11,13 @@ import java.util.List;
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 @Entity
-@Table(name = "clip_comments")
+@Table(
+        name = "clip_comments",
+        indexes = {
+                @Index(name = "idx_clip_comments_clip", columnList = "clip_id"),
+                @Index(name = "idx_clip_comments_parent", columnList = "parent_id")
+        }
+)
 public class ClipComment {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -30,7 +36,7 @@ public class ClipComment {
 
     private LocalDateTime createdAt;
 
-    // ✅ 부모 댓글 (null이면 최상위 댓글)
+    // 부모 댓글 (null이면 최상위 댓글)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private ClipComment parent;
