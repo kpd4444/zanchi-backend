@@ -89,6 +89,8 @@ public class SecurityConfig {
                         // 이름 변경 API
                         .requestMatchers(HttpMethod.PATCH,"/api/name").authenticated()
 
+                        .requestMatchers(HttpMethod.POST,"/api/preferences/survey").authenticated()
+
                         // 그 외 모두 인증
                         .anyRequest().authenticated()
                 )

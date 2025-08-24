@@ -1,4 +1,4 @@
-package com.zanchi.zanchi_backend.config;
+package com.zanchi.zanchi_backend.reco;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;

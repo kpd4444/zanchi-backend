@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PreferenceService {
 
-    private static final int MAX_SELECTABLE = 6; // UI 기준 추측한 내용입니다
+    private static final int MAX_SELECTABLE = 6;
 
     private final MemberRepository memberRepository;
     private final PreferenceTagRepository preferenceTagRepository;
