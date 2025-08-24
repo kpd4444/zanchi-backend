@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name="clip_save",
         uniqueConstraints = @UniqueConstraint(name="uk_member_clip", columnNames={"member_id","clip_id"}))
-@Getter
+@Getter @Setter
 @NoArgsConstructor(access= AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
@@ -21,7 +21,8 @@ public class ClipSave {
     @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="member_id", nullable=false)
     private Member member;
 
-    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="clip_id", nullable=false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "clip_id", nullable = false)
     private Clip clip;
 
     private LocalDateTime createdAt;

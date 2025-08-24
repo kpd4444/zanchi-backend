@@ -15,7 +15,7 @@ public class ClipLike {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "clip_id")
+    @JoinColumn(name = "clip_id", nullable = false)
     private Clip clip;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

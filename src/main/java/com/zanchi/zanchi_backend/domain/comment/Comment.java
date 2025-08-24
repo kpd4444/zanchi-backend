@@ -18,8 +18,8 @@ public class Comment {
     @JoinColumn(name = "member_id")
     private Member member;
 
-    @ManyToOne
-    @JoinColumn(name = "clip_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "clip_id", nullable = false)
     private Clip clip;
 
     private LocalDateTime createdAt;
