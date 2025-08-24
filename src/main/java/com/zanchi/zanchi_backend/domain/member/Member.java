@@ -46,8 +46,6 @@ public class Member {
     @Builder.Default
     private Integer point = 0;
 
-    /* -------------------- 신규 추가 필드 -------------------- */
-
     @Column(name = "first_login_at")
     private LocalDateTime firstLoginAt; // 최초 로그인 시각 (null이면 아직 첫 로그인 전)
 
