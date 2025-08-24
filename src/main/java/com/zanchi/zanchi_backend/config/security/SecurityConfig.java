@@ -84,6 +84,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,  "/api/reservations/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/reservations/*/cancel").authenticated()
 
+                        // 이름 변경 API
+                        .requestMatchers(HttpMethod.PATCH,"/api/name").authenticated()
+
                         // 그 외 모두 인증
                         .anyRequest().authenticated()
                 )

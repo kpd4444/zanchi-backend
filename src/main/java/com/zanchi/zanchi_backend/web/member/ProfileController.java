@@ -41,6 +41,7 @@ public class ProfileController {
         String old = me.getAvatarUrl();
         String url = storage.saveAvatar(image);
         me.setAvatarUrl(url);
+        memberRepository.saveAndFlush(me);
         try { storage.deleteByUrl(old); } catch (Exception ignore) {}
 
         return ResponseEntity.ok(Map.of("avatarUrl", url));
