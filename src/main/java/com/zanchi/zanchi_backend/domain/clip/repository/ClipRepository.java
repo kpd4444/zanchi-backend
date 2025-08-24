@@ -35,9 +35,9 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
 
     @Query(
             value = """
-          select c from Clip c
-          join fetch c.uploader u
-          order by c.id desc
+            select c from Clip c
+            join fetch c.uploader u
+            order by c.id desc
         """,
             countQuery = "select count(c) from Clip c"
     )
@@ -67,6 +67,8 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
       select c.id as clipId,
              u.id as uploaderId,
              coalesce(u.name, u.loginId) as uploaderName,
+             u.avatarUrl as uploaderAvatarUrl,
+             c.videoUrl as videoUrl,
              c.likeCount as likeCount
       from Clip c
         join c.uploader u
@@ -75,11 +77,13 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
     """)
     Page<ClipRankView> findRanking(@Param("since") Instant since, Pageable pageable);
 
-    /** 전체 Top10 (옵셔널) */
+    /** 전체 Top10 */
     @Query("""
       select c.id as clipId,
              u.id as uploaderId,
              coalesce(u.name, u.loginId) as uploaderName,
+             u.avatarUrl as uploaderAvatarUrl,
+             c.videoUrl as videoUrl,
              c.likeCount as likeCount
       from Clip c
         join c.uploader u
@@ -105,4 +109,25 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
     Page<ClipRankItem> findRankingByShowId(@Param("showId") Integer showId,
                                            @Param("since") LocalDateTime since,
                                            Pageable pageable);
+
+    /** 공연별 기간 랭킹 (start ≤ createdAt < end) */
+    @Query("""
+      select c.id as clipId,
+             u.id as uploaderId,
+             coalesce(u.name, u.loginId) as uploaderName,
+             c.likeCount as likeCount,
+             c.caption as caption,
+             c.videoUrl as videoUrl,
+             c.createdAt as createdAt
+      from Clip c
+        join c.uploader u
+      where c.show.id = :showId
+        and c.createdAt >= :start
+        and c.createdAt <  :end
+      order by c.likeCount desc, c.createdAt desc
+    """)
+    Page<ClipRankItem> findRankingByShowAndDate(@Param("showId") Integer showId,
+                                                @Param("start") LocalDateTime start,
+                                                @Param("end")   LocalDateTime end,
+                                                Pageable pageable);
 }
