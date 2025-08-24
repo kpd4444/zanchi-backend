@@ -7,6 +7,7 @@ import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
 import com.zanchi.zanchi_backend.domain.clip.service.ClipService;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
+import com.zanchi.zanchi_backend.domain.member_follow.dto.MemberSummary;
 import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
 import com.zanchi.zanchi_backend.web.clip.dto.ClipRankResponse;
 import jakarta.validation.Valid;
@@ -260,5 +261,11 @@ public class ClipController {
                 .collect(Collectors.toList());
 
         return response;
+    }
+
+    @GetMapping("/api/members/{userId}/summary")
+    public ResponseEntity<MemberSummary> userSummary(@PathVariable Long userId) {
+        var user = memberRepository.findById(userId).orElseThrow();
+        return ResponseEntity.ok(MemberSummary.of(user)); // avatarUrl 포함되어야 함
     }
 }

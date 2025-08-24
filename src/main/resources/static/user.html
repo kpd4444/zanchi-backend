@@ -148,6 +148,12 @@
         el.src=url;
     }
 
+    // ★ 캐시 버스터 유틸 (동일 URL 덮어쓰기 대비)
+    function bust(url){
+        if(!url) return null;
+        return url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+    }
+
     // ===== Profile header =====
     async function loadCounts(){
         try{
@@ -181,6 +187,22 @@
         }catch(e){ console.error(e); toast('실패했어요'); }
     }
     document.getElementById('followBtn').addEventListener('click', toggleFollow);
+
+    // ★ 사용자 요약 불러와 헤더(이름/아바타) 세팅
+    async function loadProfileHeader(){
+        try{
+            const s = await getJson(`/api/members/${encodeURIComponent(USER_ID)}/summary`);
+            // 이름 세팅 (name → loginId 폴백)
+            document.getElementById('name').textContent =
+                (s?.name && s.name.trim()) ? s.name.trim() :
+                    (s?.loginId || '사용자');
+            // 아바타 세팅 (캐시 버스터 적용)
+            applyAvatar(bust(s?.avatarUrl));
+        }catch(e){
+            console.warn('summary load fail', e);
+            // 실패 시 기본 아바타 유지
+        }
+    }
 
     // ===== Clips of the user (전용 API 우선, 없으면 feed 필터 폴백) =====
     function resolveName(obj){
@@ -305,7 +327,8 @@
         arr.forEach(m=>{
             const row = document.createElement('div'); row.className='person';
             const img = document.createElement('img'); img.className='pav';
-            if (m.avatarUrl) { img.src = m.avatarUrl; img.onerror=()=>img.src=DEFAULT_AVATAR_DATA; }
+            // ★ 캐시 버스터 적용해 최신 아바타 강제 로드
+            if (m.avatarUrl) { img.src = bust(m.avatarUrl); img.onerror=()=>img.src=DEFAULT_AVATAR_DATA; }
             else img.src = DEFAULT_AVATAR_DATA;
 
             const nm = document.createElement('div'); nm.className='pname';
@@ -357,7 +380,12 @@
     (async function boot(){
         if(!USER_ID){ alert('userId가 없습니다.'); return; }
         applyAvatar(null); // 기본아바타 먼저
-        await Promise.all([loadCounts(), loadRelation(), loadClipsOfUser()]);
+        await Promise.all([
+            loadProfileHeader(),   // ★ 요약 불러와서 이름/아바타 세팅
+            loadCounts(),
+            loadRelation(),
+            loadClipsOfUser()
+        ]);
     })();
 </script>
 </body>
