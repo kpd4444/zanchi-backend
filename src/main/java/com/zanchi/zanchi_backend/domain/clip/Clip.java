@@ -1,6 +1,7 @@
 package com.zanchi.zanchi_backend.domain.clip;
 
 import com.zanchi.zanchi_backend.domain.member.Member;
+import com.zanchi.zanchi_backend.domain.show.Show;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -20,6 +21,10 @@ public class Clip {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "uploader_id")
     private Member uploader; // 작성자
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "show_id", foreignKey = @ForeignKey(name = "fk_clips_show"))
+    private Show show;
 
     @Column(length = 300)
     private String caption;

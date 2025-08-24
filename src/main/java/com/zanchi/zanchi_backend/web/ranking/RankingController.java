@@ -23,7 +23,7 @@ public class RankingController {
     public Page<ClipRankView> ranking(
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant since,
-            @PageableDefault(size = 20, sort = "likeCount", direction = Sort.Direction.DESC) Pageable pageable
+            @PageableDefault(size = 30, sort = "likeCount", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return rankingService.getRanking(since, pageable);
     }

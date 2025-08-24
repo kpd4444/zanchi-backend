@@ -1,15 +1,19 @@
+// com.zanchi.zanchi_backend.web.show.ShowController
+
 package com.zanchi.zanchi_backend.web.show;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.web.bind.annotation.*;
+import com.zanchi.zanchi_backend.domain.ranking.RankingService;
+import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankItem;
 import com.zanchi.zanchi_backend.domain.show.Show;
 import com.zanchi.zanchi_backend.domain.show.ShowRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.*;
+import java.time.LocalDateTime;
+import org.springframework.format.annotation.DateTimeFormat;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/shows")
@@ -17,44 +21,44 @@ import java.util.Map;
 public class ShowController {
 
     private final ShowRepository showRepository;
+    private final RankingService rankingService;
 
-    @GetMapping
-    public Map<String, Object> list(@RequestParam(defaultValue = "0") int page,
-                                    @RequestParam(defaultValue = "20") int size) {
-        Page<Show> p = showRepository.findAllByOrderByDateDesc(PageRequest.of(page, size));
-        List<Map<String, Object>> content = p.getContent().stream().map(s -> {
+    @GetMapping("/{showId}")
+    public Map<String, Object> detail(
+            @PathVariable Integer showId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime since
+    ) {
+        Show s = showRepository.findById(showId)
+                .orElseThrow(() -> new NoSuchElementException("show not found"));
+
+        var page = rankingService.getRankingByShow(showId, since, PageRequest.of(0, 10));
+
+        List<Map<String, Object>> topClips = page.getContent().stream().map(r -> {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("showId", s.getId());
-            m.put("title", s.getTitle());
-            m.put("date", s.getDate());
-            m.put("venue", s.getVenue());
-            m.put("posterUrl", s.getPosterUrl());
-            m.put("price", s.getPrice());
-            m.put("remainingQty", s.getRemainingQty());
-            m.put("salesStartAt", s.getSalesStartAt());
-            m.put("salesEndAt", s.getSalesEndAt());
+            m.put("clipId", r.getClipId());
+            m.put("uploaderId", r.getUploaderId());
+            m.put("uploaderName", r.getUploaderName());
+            m.put("likeCount", r.getLikeCount());
+            m.put("caption", r.getCaption());
+            m.put("videoUrl", r.getVideoUrl());
+            m.put("createdAt", r.getCreatedAt());
             return m;
         }).toList();
 
-        return Map.of("content", content,
-                "page", p.getNumber(), "size", p.getSize(), "totalElements", p.getTotalElements());
-    }
-
-    @GetMapping("/{showId}")
-    public Map<String, Object> detail(@PathVariable Integer showId) {
-        Show s = showRepository.findById(showId)
-                .orElseThrow(() -> new java.util.NoSuchElementException("show not found"));
-        return Map.of(
-                "showId", s.getId(),
-                "title", s.getTitle(),
-                "date", s.getDate(),
-                "venue", s.getVenue(),
-                "posterUrl", s.getPosterUrl(),
-                "price", s.getPrice(),
-                "remainingQty", s.getRemainingQty(),
-                "salesStartAt", s.getSalesStartAt(),
-                "salesEndAt", s.getSalesEndAt(),
-                "description", s.getDescription()
-        );
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("showId", s.getId());
+        body.put("title", s.getTitle());
+        body.put("date", s.getDate());
+        body.put("venue", s.getVenue());
+        body.put("posterUrl", s.getPosterUrl());
+        body.put("price", s.getPrice());
+        body.put("remainingQty", s.getRemainingQty());
+        body.put("salesStartAt", s.getSalesStartAt());
+        body.put("salesEndAt", s.getSalesEndAt());
+        body.put("description", s.getDescription());
+        body.put("topClips", topClips);
+        return body;
     }
 }

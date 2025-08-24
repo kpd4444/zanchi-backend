@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>공연 상세</title>
+    <style>
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        @media (min-width: 640px) { .grid { grid-template-columns: repeat(5, 1fr); } }
+        .card { border: 1px solid #eee; border-radius: 12px; padding: 12px; }
+        .meta { font-size: 12px; color: #666; margin-top: 6px; }
+        .caption { margin-top: 8px; font-size: 13px; }
+    </style>
+</head>
+<body>
+<h2 id="title"></h2>
+<div id="top10" class="grid"></div>
+
+<script>
+    const showId = 1; // 실제 라우팅 값
+    fetch(`/api/shows/${showId}`)
+        .then(r => r.json())
+        .then(d => {
+            document.getElementById('title').textContent = d.title;
+            const box = document.getElementById('top10');
+            box.innerHTML = '';
+            (d.topClips || []).forEach((c, i) => {
+                const el = document.createElement('div');
+                el.className = 'card';
+                el.innerHTML = `
+            <div>#${i + 1} · 좋아요 ${c.likeCount}</div>
+            <div class="meta">업로더: ${c.uploaderName ?? '-'}</div>
+            <div class="caption">${c.caption ?? ''}</div>
+            <a href="${c.videoUrl}" target="_blank" rel="noopener">영상 보기</a>
+          `;
+                box.appendChild(el);
+            });
+        });
+</script>
+</body>
+</html>

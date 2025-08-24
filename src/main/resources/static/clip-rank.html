@@ -19,16 +19,44 @@
         .chip.active { border-color:#8b5cf6; }
         input[type=datetime-local] { padding:8px 10px; border-radius:10px; border:1px solid #2a2a2a; background:#141414; color:#fff; outline:none; font-size:13px; }
         .list { padding:12px 0 28px; }
-        .row { display:grid; grid-template-columns: 44px 1fr auto; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid #1b1b1b; }
+
+        /* ==== Top3 포디움 ==== */
+        .hero { margin:16px 0 12px; background:#cf6f32; border:1px solid #a95622; border-radius:16px; padding:16px; color:#fff; }
+        .hero-head { display:flex; align-items:center; justify-content:space-between; font-size:12px; opacity:.9; margin-bottom:12px; }
+        .podium { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px; align-items:end; }
+        .pillar { position:relative; background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.2); border-radius:12px; display:flex; align-items:flex-end; justify-content:center; padding:16px; overflow:hidden; }
+        .pillar.left  { height:220px; }
+        .pillar.center{ height:260px; }
+        .pillar.right { height:200px; }
+
+        /* 비디오 박스: 포디움 내부에서 적당한 비율로 */
+        .hero-video {
+            position:absolute; top:18px; left:50%; transform:translateX(-50%);
+            width:82%; height:64%;
+            background:#000; border-radius:14px; object-fit:cover;
+            border:2px solid rgba(255,255,255,.25); box-shadow:0 6px 16px rgba(0,0,0,.25);
+        }
+        .crown { position:absolute; top:-18px; left:50%; transform:translateX(-50%); font-size:22px; }
+        .badge-rank { position:absolute; bottom:56px; left:50%; transform:translateX(-50%); background:#f4d2a2; color:#7a4b1c; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; border:2px solid rgba(0,0,0,.15); }
+        .hero-name { position:absolute; bottom:24px; left:0; right:0; text-align:center; font-weight:800; font-size:13px; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+        .hero-handle { position:absolute; bottom:8px; left:0; right:0; text-align:center; font-size:11px; opacity:.95; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+        .hero-like { text-align:center; margin-top:10px; font-weight:800; font-size:18px; }
+
+        /* ==== 리스트 ==== */
+        .row { display:grid; grid-template-columns: 32px 40px 1fr auto; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid #1b1b1b; }
         .rank { font-weight:800; text-align:center; }
-        .main { display:flex; flex-direction:column; gap:4px; }
+        .av { width:40px; height:40px; border-radius:50%; object-fit:cover; background:#333; }
+        .main { display:flex; flex-direction:column; gap:2px; }
         .name a { color:inherit; text-decoration:none; font-weight:800; }
         .name a:hover { text-decoration:underline; }
         .meta { color:#bdbdbd; font-size:12px; }
         .likes { font-weight:800; }
+        .heart { color:#ff4d4f; margin-left:4px; }
+
         .pager { display:flex; justify-content:center; gap:10px; padding:10px 0 24px; position:sticky; bottom:0; backdrop-filter:saturate(180%) blur(8px); background:rgba(0,0,0,.4); border-top:1px solid #222; }
         .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 14px; border-radius:10px; border:1px solid #333; font-size:13px; }
         .ghost { opacity:.7; }
+
         @media (prefers-color-scheme: light) {
             body { background:#f7f7f8; color:#111; }
             header { background:rgba(255,255,255,.7); border-color:rgba(0,0,0,.06); }
@@ -38,6 +66,7 @@
             .row { border-color:#eee; }
             .pager { background:rgba(255,255,255,.7); border-color:#eee; }
             .toast { background:#111; color:#fff; }
+            .hero { border-color:#e7c19e; }
         }
     </style>
 </head>
@@ -70,6 +99,16 @@
         </div>
     </section>
 
+    <!-- Top3 포디움 -->
+    <section id="hero" class="hero" style="display:none">
+        <div class="hero-head">
+            <div id="heroLeft" class="ghost">업데이트: -</div>
+            <div id="heroRight" class="ghost">랭킹 확정까지 D-</div>
+        </div>
+        <div class="podium" id="podium"></div>
+        <div id="heroLikeSum" class="hero-like"></div>
+    </section>
+
     <section id="list" class="list"></section>
 
     <nav class="pager">
@@ -96,6 +135,16 @@
         setTimeout(()=>t.remove(), 1400);
     }
     function fmtNumber(n){ try { return Number(n).toLocaleString(); } catch { return String(n ?? '0'); } }
+    function fmtCompact(n){
+        try { return new Intl.NumberFormat('en', {notation:'compact', maximumFractionDigits:1}).format(Number(n||0)); }
+        catch { return fmtNumber(n); }
+    }
+    const DEFAULT_AVATAR_DATA =
+        'data:image/svg+xml;utf8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4b5563"/><stop offset="1" stop-color="#1f2937"/></linearGradient></defs>
+        <rect width="100%" height="100%" fill="url(#g)"/><circle cx="60" cy="46" r="22" fill="#9ca3af"/><rect x="22" y="76" width="76" height="30" rx="15" fill="#9ca3af"/>
+      </svg>`);
+    function bust(url){ return !url ? null : url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now(); }
 
     async function getJson(url, opt = {}) {
         const headers = opt.headers ? { ...opt.headers } : {};
@@ -132,7 +181,10 @@
     };
 
     // ====== UI wiring ======
-    const listEl = document.getElementById('list');
+    const listEl   = document.getElementById('list');
+    const heroEl   = document.getElementById('hero');
+    const podiumEl = document.getElementById('podium');
+    const heroLikeSumEl = document.getElementById('heroLikeSum');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const pageInfo = document.getElementById('pageInfo');
@@ -156,7 +208,6 @@
             if (p === 'all') {
                 sinceInput.value = '';
             } else {
-                // 미리 input에도 반영(현지 로컬 시간값으로 변환)
                 const d = state.sinceISO ? new Date(state.sinceISO) : null;
                 sinceInput.value = d ? toLocalDatetimeValue(d) : '';
             }
@@ -171,7 +222,6 @@
             state.sinceISO = null; // 전체
             document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
         } else {
-            // 로컬 -> ISO
             const local = new Date(v);
             if (isNaN(local.getTime())) return toast('잘못된 날짜/시간');
             state.sinceISO = local.toISOString();
@@ -191,12 +241,11 @@
     function computeSince(period) {
         const now = Date.now();
         if (period === '24h') return new Date(now - 24*60*60*1000).toISOString();
-        if (period === '7d') return new Date(now - 7*24*60*60*1000).toISOString();
+        if (period === '7d')  return new Date(now - 7*24*60*60*1000).toISOString();
         if (period === '30d') return new Date(now - 30*24*60*60*1000).toISOString();
         return null; // all
     }
     function toLocalDatetimeValue(d) {
-        // yyyy-MM-ddTHH:mm (로컬)
         const pad = (n)=> String(n).padStart(2,'0');
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
@@ -206,17 +255,21 @@
         if (state.loading) return;
         state.loading = true;
         try {
-            if (reset) listEl.innerHTML = '';
+            if (reset) { listEl.innerHTML = ''; podiumEl.innerHTML = ''; heroEl.style.display='none'; }
             const params = new URLSearchParams();
             if (state.sinceISO) params.set('since', state.sinceISO);
             params.set('page', state.page);
             params.set('size', state.size);
-            // 정렬은 컨트롤러의 @PageableDefault 가 likeCount desc 이므로 생략 가능
 
             const data = await getJson(`/api/ranking/clips?${params.toString()}`);
             const meta = pageMeta(data);
             state.totalPages = meta.totalPages ?? 1;
-            render(meta.content);
+
+            // hero(Top3)는 첫 페이지에서만 표시
+            if (state.page === 0) buildHero(meta.content.slice(0,3));
+            else heroEl.style.display='none';
+
+            render(meta.content, state.page === 0 ? 3 : 0); // top3 제외 후 리스트
             pageInfo.textContent = `${meta.number + 1} / ${state.totalPages}`;
             prevBtn.disabled = (state.page <= 0);
             nextBtn.disabled = (state.page + 1 >= state.totalPages);
@@ -228,19 +281,108 @@
         }
     }
 
-    function render(items) {
-        if (!items || items.length === 0) {
+    // Top3 포디움: videoUrl 재생 (없으면 아바타 이미지 폴백)
+    function buildHero(top3){
+        if (!top3 || top3.length === 0) { heroEl.style.display='none'; return; }
+        heroEl.style.display='block';
+        document.getElementById('heroLeft').textContent = '업데이트 ' + new Date().toLocaleString();
+        document.getElementById('heroRight').textContent = '랭킹 확정까지 D-';
+        podiumEl.innerHTML = '';
+
+        // 순서를 2-1-3으로 배치(가운데가 1위)
+        const order = [1,0,2].filter(i => top3[i]);
+        let likeSum = 0;
+
+        order.forEach((idx, col) => {
+            const r = top3[idx];
+            likeSum += (r.likeCount||0);
+
+            const colName = col===0 ? 'left' : (col===1 ? 'center' : 'right');
+            const p = document.createElement('div');
+            p.className = `pillar ${colName}`;
+
+            const crown = document.createElement('div');
+            crown.className = 'crown';
+            crown.textContent = idx===0?'👑':(idx===1?'🥈':'🥉');
+
+            // ---- 핵심: video ----
+            if (r.videoUrl) {
+                const vid = document.createElement('video');
+                vid.className = 'hero-video';
+                vid.src = r.videoUrl;
+                vid.muted = true;
+                vid.loop = true;
+                vid.playsInline = true;
+                vid.autoplay = true;
+                vid.preload = 'metadata'; // 과도한 네트워크 방지
+                // 포스터로 아바타 활용(있으면)
+                const poster = bust(r.uploaderAvatarUrl);
+                if (poster) vid.setAttribute('poster', poster);
+                // 일부 브라우저에서 자동재생 실패 대비
+                vid.addEventListener('error', ()=> { vid.replaceWith(makeAvatarFallback(r)); });
+                vid.addEventListener('loadeddata', ()=> { vid.play().catch(()=>{}); });
+                p.appendChild(vid);
+            } else {
+                p.appendChild(makeAvatarFallback(r));
+            }
+
+            const badge = document.createElement('div');
+            badge.className = 'badge-rank';
+            badge.textContent = idx+1;
+
+            const nm = document.createElement('div');
+            nm.className = 'hero-name';
+            nm.textContent = r.uploaderName || `사용자#${r.uploaderId}`;
+
+            const handle = document.createElement('div');
+            handle.className = 'hero-handle';
+            handle.textContent = `@user_${r.uploaderId}`;
+
+            // 클릭하면 프로필로 이동
+            p.style.cursor='pointer';
+            p.addEventListener('click', ()=> location.href=`/user.html?userId=${encodeURIComponent(r.uploaderId)}`);
+
+            p.appendChild(crown);
+            p.appendChild(badge);
+            p.appendChild(nm);
+            p.appendChild(handle);
+            podiumEl.appendChild(p);
+        });
+
+        heroLikeSumEl.textContent = fmtNumber(likeSum);
+    }
+
+    // 비디오 실패 시 아바타 이미지 네모 박스 폴백
+    function makeAvatarFallback(r){
+        const img = new Image();
+        img.className = 'hero-video';
+        img.src = bust(r.uploaderAvatarUrl) || DEFAULT_AVATAR_DATA;
+        img.onerror = ()=> img.src = DEFAULT_AVATAR_DATA;
+        img.alt = r.uploaderName || 'avatar';
+        return img;
+    }
+
+    function render(items, skipHeadCount = 0) {
+        const baseRank = state.page * state.size;
+        const list = (skipHeadCount>0) ? items.slice(skipHeadCount) : items;
+        if (!list || list.length === 0) {
             listEl.innerHTML = '<div class="ghost" style="padding:14px 0;">데이터가 없습니다.</div>';
             return;
         }
         const frag = document.createDocumentFragment();
-        items.forEach((r, i) => {
+        list.forEach((r, i) => {
             const row = document.createElement('div');
             row.className = 'row';
 
             const rank = document.createElement('div');
             rank.className = 'rank';
-            rank.textContent = (state.page * state.size) + i + 1;
+            rank.textContent = baseRank + skipHeadCount + i + 1;
+
+            const av = document.createElement('img');
+            av.className = 'av';
+            av.src = bust(r.uploaderAvatarUrl) || DEFAULT_AVATAR_DATA;
+            av.onerror = ()=> av.src = DEFAULT_AVATAR_DATA;
+            av.alt = 'avatar';
 
             const main = document.createElement('div');
             main.className = 'main';
@@ -252,21 +394,26 @@
             name.appendChild(a);
             const meta = document.createElement('div');
             meta.className = 'meta';
-            meta.textContent = `clipId: ${r.clipId}`;
+            meta.textContent = `@user_${r.uploaderId} · clipId ${r.clipId}`;
             main.appendChild(name);
             main.appendChild(meta);
 
             const right = document.createElement('div');
             right.className = 'likes';
-            right.textContent = `♥ ${fmtNumber(r.likeCount)}`;
+            right.innerHTML = `${fmtCompact(r.likeCount)} <span class="heart">❤</span>`;
 
             row.appendChild(rank);
+            row.appendChild(av);
             row.appendChild(main);
             row.appendChild(right);
 
-            // (선택) 클릭 시 클립 상세로 이동하고 싶다면 아래 주석 해제 (해당 페이지가 있을 때)
-            // row.style.cursor = 'pointer';
-            // row.addEventListener('click', () => location.href = `/clip.html?clipId=${encodeURIComponent(r.clipId)}`);
+            // 행 전체 클릭 시 영상 열기(있을 때)
+            if (r.videoUrl) {
+                row.style.cursor = 'pointer';
+                row.addEventListener('click', (e)=> {
+                    if (e.target.tagName !== 'A') window.open(r.videoUrl, '_blank');
+                });
+            }
 
             frag.appendChild(row);
         });
@@ -276,9 +423,6 @@
 
     // ====== boot ======
     (function boot(){
-        // 기본: 7일 버튼 활성화 예시 → 필요 없으면 주석
-        // document.querySelector('.chip[data-period="7d"]')?.click();
-        // 기본은 '전체'
         document.querySelector('.chip[data-period="all"]')?.classList.add('active');
         load(true);
     })();
