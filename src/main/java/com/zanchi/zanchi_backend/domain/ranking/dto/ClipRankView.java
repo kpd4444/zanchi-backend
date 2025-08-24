@@ -7,4 +7,5 @@ public interface ClipRankView {
     String getUploaderAvatarUrl();
     String getVideoUrl();
     Long getLikeCount();
+    String getCaption();
 }

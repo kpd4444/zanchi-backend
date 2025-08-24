@@ -70,6 +70,7 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
              coalesce(u.name, u.loginId) as uploaderName,
              u.avatarUrl as uploaderAvatarUrl,
              c.videoUrl as videoUrl,
+             coalesce(c.caption, '') as caption,
              c.likeCount as likeCount
       from Clip c
         join c.uploader u
@@ -92,45 +93,47 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
     """)
     Page<ClipRankView> findTop10ClipsByLikeCount(Pageable pageable);
 
-    // 공연별 TopN (since 기준)
+    /** 공연별 TopN (since 기준) — showId는 Long 권장 */
     @Query("""
-  select c.id as clipId,
-         u.id as uploaderId,
-         coalesce(u.name, u.loginId) as uploaderName,
-         c.likeCount as likeCount,
-         c.caption as caption,
-         c.videoUrl as videoUrl,
-         c.createdAt as createdAt
-  from Clip c
-    join c.uploader u
-  where c.show.id = :showId
-    and (:since is null or c.createdAt >= :since)
-  order by c.likeCount desc, c.createdAt desc
-""")
-    Page<ClipRankItem> findRankingByShowId(@Param("showId") Long showId,   // ← 권장: Long
+      select c.id as clipId,
+             u.id as uploaderId,
+             coalesce(u.name, u.loginId) as uploaderName,
+             c.likeCount as likeCount,
+             coalesce(c.caption, '') as caption,
+             c.videoUrl as videoUrl,
+             c.createdAt as createdAt
+      from Clip c
+        join c.uploader u
+      where c.show.id = :showId
+        and (:since is null or c.createdAt >= :since)
+      order by c.likeCount desc, c.createdAt desc
+    """)
+    Page<ClipRankItem> findRankingByShowId(@Param("showId") Long showId,
                                            @Param("since") LocalDateTime since,
                                            Pageable pageable);
 
+    /** 공연별 기간 랭킹 (start <= createdAt < end) */
     @Query("""
-select c.id as clipId,
-       u.id as uploaderId,
-       coalesce(u.name, u.loginId) as uploaderName,
-       c.likeCount as likeCount,
-       c.caption as caption,
-       c.videoUrl as videoUrl,
-       c.createdAt as createdAt
-from Clip c
-join c.uploader u
-where c.show.id = :showId
-  and c.createdAt >= :start
-  and c.createdAt <  :end
-order by c.likeCount desc, c.createdAt desc
-""")
+      select c.id as clipId,
+             u.id as uploaderId,
+             coalesce(u.name, u.loginId) as uploaderName,
+             c.likeCount as likeCount,
+             coalesce(c.caption, '') as caption,
+             c.videoUrl as videoUrl,
+             c.createdAt as createdAt
+      from Clip c
+      join c.uploader u
+      where c.show.id = :showId
+        and c.createdAt >= :start
+        and c.createdAt <  :end
+      order by c.likeCount desc, c.createdAt desc
+    """)
     Page<ClipRankItem> findRankingByShowAndDate(@Param("showId") Long showId,
                                                 @Param("start") LocalDateTime start,
-                                                @Param("end")   LocalDateTime end,
+                                                @Param("end") LocalDateTime end,
                                                 Pageable pageable);
 
+    // ========= 팔로잉 피드 =========
     @Query(
             value = """
         select new com.zanchi.zanchi_backend.domain.clip.dto.ClipSummary(
