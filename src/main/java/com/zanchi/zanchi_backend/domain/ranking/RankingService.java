@@ -26,13 +26,13 @@ public class RankingService {
 
     /** 2) 공연별 TopN — since(시각) 기준 (현재 네 ShowController 버전과 호환) */
     @Transactional(readOnly = true)
-    public Page<ClipRankItem> getRankingByShow(Integer showId, LocalDateTime since, Pageable pageable) {
+    public Page<ClipRankItem> getRankingByShow(Long showId, LocalDateTime since, Pageable pageable) {
         return clipRepository.findRankingByShowId(showId, since, pageable);
     }
 
     /** 3) 공연별 TopN — 집계 '일자' 기준 (rankDate 하루 구간) */
     @Transactional(readOnly = true)
-    public Page<ClipRankItem> getRankingByShowAndDate(Integer showId, LocalDate rankDate, Pageable pageable) {
+    public Page<ClipRankItem> getRankingByShowAndDate(Long showId, LocalDate rankDate, Pageable pageable) {
         LocalDateTime start = rankDate.atStartOfDay();
         LocalDateTime end   = start.plusDays(1);
         return clipRepository.findRankingByShowAndDate(showId, start, end, pageable);

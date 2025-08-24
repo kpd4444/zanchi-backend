@@ -33,7 +33,7 @@ public class ShowController {
         Show s = showRepository.findById(showId)
                 .orElseThrow(() -> new NoSuchElementException("show not found"));
 
-        var page = rankingService.getRankingByShow(showId, since, PageRequest.of(0, 10));
+        var page = rankingService.getRankingByShow(showId.longValue(), since, PageRequest.of(0, 10));
 
         List<Map<String, Object>> topClips = page.getContent().stream().map(r -> {
             Map<String, Object> m = new LinkedHashMap<>();
