@@ -35,7 +35,8 @@ public class SecurityConfig {
     @Value("${auth.dev.ignore-redis:false}")
     private boolean ignoreRedisErrorsInDev;
 
-    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+
+    @Value("${app.cors.allowed-origins:https://zanchi-frontend.vercel.app,http://localhost:3000}")
     private String allowedOrigins;
 
     @Bean
@@ -105,16 +106,28 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
+        // 쉼표로 분리된 오리진 목록 구성
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
-                .toList());
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+                .toList();
+
+        CorsConfiguration config = new CorsConfiguration();
+
+        // 와일드카드(*)가 포함되어 있으면 패턴 API 사용, 아니면 정확 매칭 API 사용
+        boolean usePatterns = origins.stream().anyMatch(o -> o.contains("*"));
+        if (usePatterns) {
+            config.setAllowedOriginPatterns(origins);
+        } else {
+            config.setAllowedOrigins(origins);
+        }
+
+        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"));
         config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Requested-With","Accept","Origin"));
-        config.setExposedHeaders(List.of("Authorization")); // ← 추가: 프론트에서 Authorization 헤더 읽기용
-        config.setAllowCredentials(true);
-        config.setMaxAge(Duration.ofHours(1));
+        // 프론트에서 Authorization 헤더를 읽어야 한다면 노출
+        config.setExposedHeaders(List.of("Authorization"));
+        config.setAllowCredentials(true); // 쿠키/인증정보 포함 요청 허용
+        config.setMaxAge(Duration.ofHours(1)); // preflight 캐시
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
