@@ -4,6 +4,7 @@ import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.ClipComment;
 import com.zanchi.zanchi_backend.domain.clip.dto.*;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipCommentRepository;
+import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
 import com.zanchi.zanchi_backend.domain.clip.service.ClipService;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
@@ -20,8 +21,10 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -33,6 +36,7 @@ public class ClipController {
     private final ClipCommentRepository commentRepository;
     private final MemberRepository memberRepository;
     private final ClipRepository clipRepository;
+    private final ClipLikeRepository clipLikeRepository;
 
     // 1) 업로드 (multipart/form-data: video, caption)
     @PostMapping(path = "/api/clips", consumes = "multipart/form-data")
@@ -50,10 +54,19 @@ public class ClipController {
 
     // 2) 피드 (페이지네이션)
     @GetMapping("/api/clips/feed")
-    public ResponseEntity<Page<ClipFeedRes>> feed(@RequestParam(defaultValue = "0") int page,
-                                                  @RequestParam(defaultValue = "10") int size) {
+    public ResponseEntity<Page<ClipFeedRes>> feed(
+            @AuthenticationPrincipal(expression = "member.id") Long meId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
         Page<Clip> p = clipService.feed(PageRequest.of(page, size));
-        Page<ClipFeedRes> mapped = p.map(ClipFeedRes::of);
+        var clipIds = p.getContent().stream().map(Clip::getId).toList();
+
+        Set<Long> likedSet = (meId != null && !clipIds.isEmpty())
+                ? new HashSet<>(clipLikeRepository.findLikedClipIds(meId, clipIds))
+                : Set.of();
+
+        Page<ClipFeedRes> mapped = p.map(c -> ClipFeedRes.of(c, likedSet.contains(c.getId())));
         return ResponseEntity.ok(mapped);
     }
 

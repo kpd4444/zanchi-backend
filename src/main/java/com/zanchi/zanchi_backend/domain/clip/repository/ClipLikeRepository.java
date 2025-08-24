@@ -6,6 +6,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import org.springframework.data.repository.query.Param;
+import java.util.List;
+
 public interface ClipLikeRepository extends JpaRepository<ClipLike,Long> {
 
     boolean existsByClipIdAndMemberId(Long clipId, Long memberId);
@@ -29,4 +32,13 @@ public interface ClipLikeRepository extends JpaRepository<ClipLike,Long> {
       """
     )
     Page<ClipLike> findByMemberId(Long memberId, Pageable pageable);
+
+    @Query("""
+    select l.clip.id
+    from ClipLike l
+    where l.member.id = :memberId
+      and l.clip.id in :clipIds
+""")
+    List<Long> findLikedClipIds(@Param("memberId") Long memberId,
+                                @Param("clipIds") List<Long> clipIds);
 }
