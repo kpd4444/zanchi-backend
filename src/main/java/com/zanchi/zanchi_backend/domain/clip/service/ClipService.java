@@ -9,7 +9,9 @@ import com.zanchi.zanchi_backend.domain.notification.event.LikeCreatedEvent;
 import com.zanchi.zanchi_backend.domain.notification.event.CommentCreatedEvent;
 import com.zanchi.zanchi_backend.domain.notification.event.MentionCreatedEvent;
 import com.zanchi.zanchi_backend.domain.notification.event.ReplyCreatedEvent;
+import com.zanchi.zanchi_backend.reco.PersonalizeCatalogService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -25,7 +27,9 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -41,6 +45,7 @@ public class ClipService {
     private final ClipMentionRepository clipMentionRepository;      // 클립 멘션
     private final ClipCommentMentionRepository clipCommentRepo;     // 댓글 멘션
     private final ApplicationEventPublisher publisher;              // 알림 이벤트 발행
+    private final PersonalizeCatalogService personalizeCatalogService;
 
     /**
      * 클립 업로드
@@ -68,6 +73,14 @@ public class ClipService {
 
         // @멘션 동기화(캡션)
         upsertMentions(saved.getId(), caption);
+
+        // === Personalize 카탈로그 업서트 ===
+        try {
+            String genres = extractGenresForPersonalize(caption); // "rock|ballad" 형식
+            personalizeCatalogService.upsertClip(saved, genres);
+        } catch (Exception e) {
+            log.warn("Personalize upsert 실패: {}", e.getMessage());
+        }
 
         return saved;
     }
@@ -325,6 +338,18 @@ public class ClipService {
     }
 
     private static final Pattern AT = Pattern.compile("(^|[^A-Za-z0-9_])@([A-Za-z0-9._-]{2,32})");
+
+    // 해시태그 파싱용 (#kpop 같은 태그 뽑기)
+    private static final Pattern HASH = Pattern.compile("#([\\p{L}0-9_\\-]{1,50})");
+
+    // Personalize Items.GENRES 채우기용 ("dance|kpop" 형식)
+    private String extractGenresForPersonalize(String caption) {
+        if (caption == null || caption.isBlank()) return "default";
+        var m = HASH.matcher(caption);
+        var list = new ArrayList<String>();
+        while (m.find()) list.add(m.group(1).toLowerCase());
+        return list.isEmpty() ? "default" : String.join("|", list);
+    }
 
     private Set<String> extractHandles(String text) {
         if (text == null || text.isBlank()) return Set.of();

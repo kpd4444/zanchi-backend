@@ -25,20 +25,20 @@ repositories {
 
 dependencies {
 	// --- Spring starters ---
-	implementation 'org.springframework.boot:spring-boot-starter-web'          // MVC (Tomcat)
+	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
-	// WebClient 용(WebFlux 서버로 쓰는 것 아님)
+	// WebClient 용 (WebFlux 서버 아님)
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 
 	// --- DB drivers ---
 	implementation 'org.mariadb.jdbc:mariadb-java-client:3.3.2'
 	implementation 'com.mysql:mysql-connector-j:8.4.0'
-	runtimeOnly 'com.h2database:h2'   // h2 프로필용
+	runtimeOnly 'com.h2database:h2'
 
 	// --- JWT ---
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
@@ -49,24 +49,21 @@ dependencies {
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 
-	// --- Spring AI (BOM으로 버전 정합성 관리) ---
+	// --- Spring AI ---
 	implementation platform("org.springframework.ai:spring-ai-bom:1.0.1")
 	implementation "org.springframework.ai:spring-ai-starter-model-openai"
-	// 확실하지 않음: 위 artifact 가 해석되지 않으면 아래로 교체하세요(서로 배타적).
+	// 필요 시 아래로 교체
 	// implementation "org.springframework.ai:spring-ai-openai-spring-boot-starter"
+
+	// --- AWS SDK v2 (BOM 하나만!) ---
+	implementation platform("software.amazon.awssdk:bom:2.26.0")
+	implementation "software.amazon.awssdk:s3"
+	implementation "software.amazon.awssdk:personalizeruntime"
+	implementation "software.amazon.awssdk:personalizeevents" // ★ 추가
 
 	// --- Test ---
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-	//--- S3 ---
-	implementation platform("software.amazon.awssdk:bom:2.25.60")
-	implementation "software.amazon.awssdk:s3"
-
-	implementation platform("software.amazon.awssdk:bom:2.26.0")
-	implementation "software.amazon.awssdk:personalizeruntime"
-	// (다음 단계용)
-	// implementation "software.amazon.awssdk:personalizeevents"
 }
 
 tasks.named('test') {
