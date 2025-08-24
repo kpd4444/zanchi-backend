@@ -28,6 +28,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Slf4j
 @Service
@@ -405,6 +407,55 @@ public class ClipService {
     @Transactional(readOnly = true)
     public Page<ClipSummary> followingClips(Long userId, Pageable pageable, String q) {
         return clipRepository.findFollowingClips(userId, q == null ? "" : q.trim(), pageable);
+    }
+
+    /**
+     * S3에 이미 업로드된 파일(Key 기준)로 클립을 생성한다.
+     * videoUrl 필드에는 S3 정적 URL을 저장한다.
+     */
+    @Transactional
+    public Clip createFromS3(Long memberId, String caption, String fileKey, Long showId) {
+        if (fileKey == null || fileKey.isBlank()) {
+            throw new IllegalArgumentException("fileKey is required");
+        }
+        final Member uploader = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("member not found"));
+
+        // 공백/특수문자 대비
+        String safeKey = URLEncoder.encode(fileKey, StandardCharsets.UTF_8)
+                .replace("+", "%20"); // 공백 보정
+
+        // S3 정적 URL (필요하면 CloudFront로 교체 가능)
+        String s3Url = "https://zanchi-prod-assets-855300093107-apne2-v2.s3.ap-northeast-2.amazonaws.com/"
+                + safeKey;
+
+        final Clip clip = Clip.builder()
+                .uploader(uploader)
+                .caption(caption)
+                .videoUrl(s3Url)    // ← fileKey 대신 videoUrl에 S3 URL 저장
+                .build();
+
+        Clip saved = clipRepository.save(clip);
+
+        // #태그 / 멘션 동기화
+        hashtagService.syncClipTags(saved, caption);
+        upsertMentions(saved.getId(), caption);
+
+        // Personalize 카탈로그 업서트 (기존 업로드 로직과 동일 처리)
+        try {
+            String genres = extractGenresForPersonalize(caption); // "rock|ballad" 형식
+            personalizeCatalogService.upsertClip(saved, genres);
+        } catch (Exception e) {
+            log.warn("Personalize upsert 실패: {}", e.getMessage());
+        }
+
+        return saved;
+    }
+
+    /** 컨트롤러 스트리밍 리다이렉트용 단건 조회 */
+    @Transactional(readOnly = true)
+    public Clip findById(Long clipId) {
+        return clipRepository.findById(clipId).orElseThrow();
     }
 
 }

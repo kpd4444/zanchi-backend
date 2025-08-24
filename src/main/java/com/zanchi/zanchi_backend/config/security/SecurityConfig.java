@@ -51,6 +51,9 @@ public class SecurityConfig {
                         // Preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
+                        .requestMatchers(HttpMethod.GET, "/api/storage/presign").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/clips/*/stream").permitAll()
+
                         // 정적 리소스 공개
                         .requestMatchers(
                                 "/", "/index.html", "/signup.html", "/login.html", "/members.html",
@@ -97,6 +100,9 @@ public class SecurityConfig {
                         // 프로필/설정 관련
                         .requestMatchers(HttpMethod.PATCH, "/api/name").authenticated()
                         .requestMatchers(HttpMethod.POST,  "/api/preferences/survey").authenticated()
+
+                        // 업로드 메타 저장(JSON)과 기타 API는 인증 필요
+                        .requestMatchers(HttpMethod.POST, "/api/clips").authenticated()
 
                         // 그 외 모두 인증
                         .anyRequest().authenticated()

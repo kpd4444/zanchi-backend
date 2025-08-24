@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.net.URI;
 
 @RestController
 @RequiredArgsConstructor
@@ -353,5 +354,28 @@ public class ClipController {
 
         var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         return clipService.followingClips(userId, pageable, q);
+    }
+
+    // A) S3 업로드 완료 후 메타 저장(기존 multipart와 같은 URL이지만 consumes로 구분)
+    @PostMapping(path = "/api/clips", consumes = "application/json")
+    public ResponseEntity<?> createFromS3(
+            @AuthenticationPrincipal(expression = "member.id") Long memberId,
+            @Valid @RequestBody ClipCreateReq req) {
+
+        if (memberId == null) {
+            return ResponseEntity.status(401).body(Map.of("error","UNAUTHORIZED","msg","로그인이 필요합니다."));
+        }
+        // req.fileKey = "clips/<UUID>.mp4"
+        Clip saved = clipService.createFromS3(memberId, req.getCaption(), req.getFileKey(), req.getShowId());
+        // 기존과 동일하게 ClipUploadRes를 재사용 (내부에서 videoUrl 등 포함)
+        return ResponseEntity.ok(ClipUploadRes.of(saved));
+    }
+
+    // B) 재생(무중단 전환용 302 redirect)
+    @GetMapping("/api/clips/{clipId}/stream")
+    public ResponseEntity<Void> stream(@PathVariable Long clipId) {
+        Clip clip = clipService.findById(clipId);
+        // videoUrl에 S3 정적 URL이 들어있음
+        return ResponseEntity.status(302).location(URI.create(clip.getVideoUrl())).build();
     }
 }

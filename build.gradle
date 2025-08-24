@@ -58,8 +58,9 @@ dependencies {
 	// --- AWS SDK v2 (BOM 하나만!) ---
 	implementation platform("software.amazon.awssdk:bom:2.26.0")
 	implementation "software.amazon.awssdk:s3"
+	implementation "software.amazon.awssdk:sts"
 	implementation "software.amazon.awssdk:personalizeruntime"
-	implementation "software.amazon.awssdk:personalizeevents" // ★ 추가
+	implementation "software.amazon.awssdk:personalizeevents"
 
 	// --- Test ---
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
