@@ -107,6 +107,7 @@ public class SecurityConfig {
 
                         // 개인화 추천 피드
                         .requestMatchers(HttpMethod.GET, "/api/reco/my-feed").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/reco/**").authenticated()
 
                         // 그 외 모두 인증
                         .anyRequest().authenticated()

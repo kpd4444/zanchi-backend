@@ -1,33 +1,31 @@
 package com.zanchi.zanchi_backend.web.reco;
 
 import com.zanchi.zanchi_backend.domain.clip.dto.ClipFeedRes;
-import com.zanchi.zanchi_backend.reco.PersonalizeService;
+import com.zanchi.zanchi_backend.reco.RecoService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/reco")
+@RequiredArgsConstructor
 public class RecoController {
 
-    private final PersonalizeService personalizeService;
+    private final RecoService recoService;
 
     /**
-     * 홈 추천
-     * - 디버그: ?personalizeUserId=u001 같이 넘기면 해당 ID로 호출
-     * - 미로그인 + 디버그 없음이면 인기 상위로 백업
+     * 내 개인화 추천 피드
+     * GET /api/reco/my-feed?page=0&size=20
      */
-    @GetMapping("/home")
-    public ResponseEntity<List<ClipFeedRes>> home(
-            @AuthenticationPrincipal(expression = "member.id") Long meId,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String personalizeUserId
+    @GetMapping("/my-feed")
+    public ResponseEntity<Page<ClipFeedRes>> myFeed(
+            Authentication auth,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
-        var list = personalizeService.homeRecommendations(meId, size, personalizeUserId);
-        return ResponseEntity.ok(list);
+        String loginId = auth.getName(); // JwtAuthenticationFilter 가 세팅
+        return ResponseEntity.ok(recoService.getMyFeed(loginId, page, size));
     }
 }
