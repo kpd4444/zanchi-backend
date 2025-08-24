@@ -428,8 +428,7 @@ public class ClipService {
                 .replace("+", "%20"); // 공백 보정
 
         // S3 정적 URL (필요하면 CloudFront로 교체 가능)
-        String s3Url = "https://zanchi-prod-assets-855300093107-apne2-v2.s3.ap-northeast-2.amazonaws.com/"
-                + safeKey;
+        String s3Url = "https://zanchi-prod-assets-855300093107-apne2-v2.s3.ap-northeast-2.amazonaws.com/" + fileKey;
 
         final Clip clip = Clip.builder()
                 .uploader(uploader)

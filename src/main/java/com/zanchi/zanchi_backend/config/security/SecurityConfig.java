@@ -53,6 +53,7 @@ public class SecurityConfig {
 
                         .requestMatchers(HttpMethod.GET, "/api/storage/presign").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/clips/*/stream").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/api/clips/*/stream").permitAll()
 
                         // 정적 리소스 공개
                         .requestMatchers(
