@@ -54,7 +54,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/", "/index.html", "/signup.html", "/login.html", "/members.html",
                                 "/reservation-test.html",
-                                "/tags-test.html","/show.html"
+                                "/tags-test.html","/show.html",
+                                "/api/members/*/summary"
                         ).permitAll()
 
                         // 로그인/가입 등 공개 API
@@ -86,8 +87,6 @@ public class SecurityConfig {
 
                         // 이름 변경 API
                         .requestMatchers(HttpMethod.PATCH,"/api/name").authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/members/*/summary").permitAll()
 
                         // 그 외 모두 인증
                         .anyRequest().authenticated()
