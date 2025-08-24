@@ -35,7 +35,7 @@ public class SecurityConfig {
     @Value("${auth.dev.ignore-redis:false}")
     private boolean ignoreRedisErrorsInDev;
 
-
+    // 쉼표로 분리: 예 https://zanchi-frontend.vercel.app,http://localhost:3000,https://zanchi-frontend-w3bh.vercel.app
     @Value("${app.cors.allowed-origins:https://zanchi-frontend.vercel.app,http://localhost:3000}")
     private String allowedOrigins;
 
@@ -48,48 +48,55 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // preflight
+                        // Preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         // 정적 리소스 공개
                         .requestMatchers(
                                 "/", "/index.html", "/signup.html", "/login.html", "/members.html",
-                                "/reservation-test.html",
-                                "/tags-test.html","/show.html",
-                                "/api/members/*/summary"
+                                "/reservation-test.html", "/tags-test.html", "/show.html"
                         ).permitAll()
 
-                        // 로그인/가입 등 공개 API
+                        // 기타 공개 경로
+                        .requestMatchers("/ai/**", "/places/**", "/error").permitAll()
+
+                        // 공개 API
                         .requestMatchers(
                                 "/api/login", "/api/auth/**", "/api/signup",
                                 "/api/members", "/api/members/**",
                                 "/api/shows/**"
                         ).permitAll()
 
-                        // ====== [여기 추가] S3 Presign (임시 공개) ======
+                        // 공개 멤버 요약
+                        .requestMatchers(HttpMethod.GET, "/api/members/*/summary").permitAll()
+
+                        // S3 Presign (임시 공개)
                         .requestMatchers(HttpMethod.POST, "/api/s3/presign-put", "/s3/presign-put").permitAll()
 
                         // ====== [클립/태그 공개 엔드포인트] ======
-                        .requestMatchers(HttpMethod.GET, "/api/tags/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/clips/feed").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/clips/*/comments/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/view").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/tags/**").permitAll()                 // 태그 목록/검색
+                        .requestMatchers(HttpMethod.GET, "/api/clips/feed").permitAll()              // 피드
+                        .requestMatchers(HttpMethod.GET, "/api/clips/*/comments/**").permitAll()     // 댓글/대댓글 조회
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/view").permitAll()           // 조회수 증가
 
                         // ====== [클립/태그 인증 필요한 엔드포인트] ======
-                        .requestMatchers(HttpMethod.POST, "/api/clips").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/like").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments/*/replies").authenticated()
+                        .requestMatchers(HttpMethod.GET,  "/api/me/following/clips").authenticated() // 팔로잉 피드
+                        .requestMatchers(HttpMethod.POST, "/api/clips").authenticated()              // 업로드
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/like").authenticated()       // 좋아요 토글
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments").authenticated()   // 댓글 작성
+                        .requestMatchers(HttpMethod.POST, "/api/clips/*/comments/*/replies").authenticated() // 대댓글 작성
 
                         // 예약 API
                         .requestMatchers(HttpMethod.POST, "/api/reservations").authenticated()
                         .requestMatchers(HttpMethod.GET,  "/api/reservations/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/reservations/*/cancel").authenticated()
 
-                        // 이름 변경 API
-                        .requestMatchers(HttpMethod.PATCH,"/api/name").authenticated()
+                        // 내 경로 API
+                        .requestMatchers(HttpMethod.POST, "/api/me/routes").authenticated()
 
-                        .requestMatchers(HttpMethod.POST,"/api/preferences/survey").authenticated()
+                        // 프로필/설정 관련
+                        .requestMatchers(HttpMethod.PATCH, "/api/name").authenticated()
+                        .requestMatchers(HttpMethod.POST,  "/api/preferences/survey").authenticated()
 
                         // 그 외 모두 인증
                         .anyRequest().authenticated()
@@ -99,7 +106,9 @@ public class SecurityConfig {
                         .accessDeniedHandler((req, res, ex) -> res.sendError(403))
                 )
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(jwtTokenProvider, memberDetailsService, redisTemplate, ignoreRedisErrorsInDev),
+                        new JwtAuthenticationFilter(
+                                jwtTokenProvider, memberDetailsService, redisTemplate, ignoreRedisErrorsInDev
+                        ),
                         UsernamePasswordAuthenticationFilter.class
                 );
 
@@ -108,7 +117,6 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        // 쉼표로 분리된 오리진 목록 구성
         List<String> origins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
@@ -116,7 +124,7 @@ public class SecurityConfig {
 
         CorsConfiguration config = new CorsConfiguration();
 
-        // 와일드카드(*)가 포함되어 있으면 패턴 API 사용, 아니면 정확 매칭 API 사용
+        // 와일드카드(*) 포함 시 패턴 매칭 사용
         boolean usePatterns = origins.stream().anyMatch(o -> o.contains("*"));
         if (usePatterns) {
             config.setAllowedOriginPatterns(origins);
@@ -124,12 +132,13 @@ public class SecurityConfig {
             config.setAllowedOrigins(origins);
         }
 
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"));
-        config.setAllowedHeaders(List.of("Authorization","Content-Type","X-Requested-With","Accept","Origin"));
-        // 프론트에서 Authorization 헤더를 읽어야 한다면 노출
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+        // 필요한 헤더가 다양할 수 있어 와일드카드 허용
+        config.setAllowedHeaders(List.of("*"));
+        // 프론트에서 Authorization 등을 읽어야 할 경우 노출
         config.setExposedHeaders(List.of("Authorization"));
-        config.setAllowCredentials(true); // 쿠키/인증정보 포함 요청 허용
-        config.setMaxAge(Duration.ofHours(1)); // preflight 캐시
+        config.setAllowCredentials(true);              // 쿠키/인증정보 포함 요청 허용
+        config.setMaxAge(Duration.ofHours(1));        // preflight 캐시
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

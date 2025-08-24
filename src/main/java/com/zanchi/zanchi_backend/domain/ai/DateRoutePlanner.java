@@ -73,7 +73,8 @@ public class DateRoutePlanner {
                     companion, mobility,
                     startName, startLat, startLng,
                     cuisine, finish, what,
-                    ideaRestaurants, ideaMids, ideaFinals
+                    ideaRestaurants, ideaMids, ideaFinals,
+                    null, null, null   // ▲ 추가: tags, excludeIds, seed
             );
 
             // AI 응답을 우리 응답 타입으로 변환

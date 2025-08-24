@@ -112,24 +112,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /**
      * 블랙리스트 체크
      * - dev 환경에서 ignoreRedisErrorsInDev=true이면 조회 자체를 건너뜀
-     * - prod 환경에서는 Redis 장애 시 차단
+     * - 운영에서도 redis 미구성 시 막지 말고 통과(원하면 block 로직으로 변경)
+     * - Redis 오류 시: dev는 통과, prod는 차단
      */
     private boolean isBlacklisted(String token) {
-        // 개발 환경이면 조회 생략
+        // 개발에서는 블랙리스트 체크 생략
         if (ignoreRedisErrorsInDev) {
             return false;
         }
 
+        // 운영에서도 redis 미구성 시 막지 말고 통과 (원하면 true 로 바꾸세요)
         if (redisTemplate == null) {
-            log.warn("RedisTemplate is null in prod → block");
-            return true;
+            log.warn("RedisTemplate is null → skip blacklist check (treat as not blacklisted)");
+            return false;
         }
 
         try {
             return Boolean.TRUE.equals(redisTemplate.hasKey(BLACKLIST_PREFIX + token));
         } catch (Exception e) {
-            log.warn("Redis error in blacklist check (prod) → block", e);
-            return true;
+            // 운영에서 Redis 장애 시 막고 싶으면 true, 개발은 property 로 false
+            log.warn("Redis error in blacklist check", e);
+            return !ignoreRedisErrorsInDev;
         }
     }
 }

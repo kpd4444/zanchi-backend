@@ -50,6 +50,8 @@ public class RouteController {
 
 
 
+
+
 //    @GetMapping("/ideas")
 //    public ResponseEntity<AiPlanner.AiPlanResponse> ideas(
 //            @RequestParam String startName,

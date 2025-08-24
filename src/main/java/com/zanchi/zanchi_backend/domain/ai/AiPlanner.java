@@ -6,6 +6,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.util.Base64;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -106,6 +107,17 @@ public class AiPlanner {
         throw new IllegalArgumentException("모델 응답에서 JSON 블록을 찾지 못했습니다: " + s);
     }
 
+    private static String[] parseIdeaId(String id) {
+        try {
+            byte[] dec = Base64.getUrlDecoder().decode(id);
+            String raw = new String(dec, StandardCharsets.UTF_8);
+            String[] parts = raw.split("\\|");
+            return (parts.length == 3) ? parts : null; // [name, lat, lng]
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static String kakaoToLink(String name, double lat, double lng) {
         return "https://map.kakao.com/link/to/" +
                 URLEncoder.encode(name, StandardCharsets.UTF_8) + "," + lat + "," + lng;
@@ -115,19 +127,22 @@ public class AiPlanner {
             String companion, String mobility,
             String startName, double startLat, double startLng,
             String cuisine, String finish, String what,
-            List<IdeaItem> restaurants, List<IdeaItem> mid, List<IdeaItem> finals
+            List<IdeaItem> restaurants, List<IdeaItem> mid, List<IdeaItem> finals,
+            List<String> tags, List<String> excludeIds, String seed
     ) {
         String system = """
-        너는 데이트 코스 플래너다. 반드시 JSON만 출력.
-        스키마: {"singles":[{...}], "plans":[{"totalTravelMinutes":0,"explain":"","steps":[{...}]},{...}]}
-        규칙:
-          - 후보(candidates.*)만 사용하고, 새 장소를 만들지 않는다.
-          - 장소는 반드시 후보의 'id'로 참조한다.
-          - steps[].id 를 반드시 포함한다(나머지 필드는 비어도 됨).
-          - singles는 후보 중에서 5~6개 (역할 다양화).
-          - plans는 2개, 도보 동선 짧게, finish 선호는 최소 1코스에 강반영.
-          - step.mapLink는 "https://map.kakao.com/link/to/{URLEncoded name},{lat},{lng}" 형식.
-        """;
+너는 데이트 코스 플래너다. 반드시 JSON만 출력.
+스키마: {"singles":[{...}], "plans":[{"totalTravelMinutes":0,"explain":"","steps":[{...}]},{...}]}
+규칙:
+  - 후보(candidates.*)만 사용하고, 새 장소를 만들지 않는다.
+  - 장소는 반드시 후보의 'id'로 참조한다. steps[].id는 필수.
+  - singles는 후보 중에서 5~6개 (역할 다양화).
+  - plans는 2개, 이동수단(context.mobility)에 맞게 동선을 최적화:
+      * 도보/자전거: 이동거리를 짧게, 근거리 위주.
+      * 대중교통/차: 중·장거리도 허용, 하지만 전체 이동시간은 합리적 수준.
+  - finish 선호(context.finish)는 최소 1코스에 강반영.
+  - step.mapLink는 "https://map.kakao.com/link/to/{URLEncoded name},{lat},{lng}" 형식.
+""";
 
         try {
             Map<String, Object> payload = Map.of(
@@ -137,7 +152,10 @@ public class AiPlanner {
                                     "mapLink", kakaoToLink(startName, startLat, startLng)
                             ),
                             "mobility", mobility, "cuisine", cuisine,
-                            "finish", finish, "companion", companion, "what", what
+                            "finish", finish, "companion", companion, "what", what,
+                            "tags", tags == null ? List.of() : tags,
+                            "seed", seed == null ? "" : seed,
+                            "excludeIds", excludeIds == null ? List.of() : excludeIds
                     ),
                     "candidates", Map.of(
                             "restaurants", restaurants != null ? restaurants : List.of(),
@@ -149,8 +167,9 @@ public class AiPlanner {
             String user = "입력:\n" + om.writeValueAsString(payload) + """
                 
                 작업:
-                - candidates.mid/restaurants/finals 중에서 'id'로만 선택한다. 새 장소 추가 금지.
-                - steps[].id 반드시 포함. name/address/lat/lng가 비어도 된다(서버가 보강).
+                - candidates.mid/restaurants/finals 중에서 'id'로만 선택한다.
+                - excludeIds 목록의 id는 절대 사용하지 않는다(steps/singles 모두).
+                - steps[].id 반드시 포함. name/address/lat/lng는 비어도 무방.
                 - explain은 한국어 2~3문장.
                 출력: JSON만.
                 """;
@@ -160,9 +179,24 @@ public class AiPlanner {
 
             AiPlanResponse parsed = om.readValue(json, AiPlanResponse.class);
 
-            // ✅ 응답을 후보로 백필하여 ? 방지 + 링크/좌표 보장
-            return backfillById(parsed, restaurants, mid, finals);
+            // 후보로 백필
+            AiPlanResponse filled = backfillById(parsed, restaurants, mid, finals);
 
+            // 안전장치: excludeIds 필터링
+            if (excludeIds != null && !excludeIds.isEmpty()) {
+                var ex = new java.util.HashSet<>(excludeIds);
+                var singles = filled.singles()==null ? List.<IdeaItem>of()
+                        : filled.singles().stream().filter(s -> s.id()==null || !ex.contains(s.id())).toList();
+                var plans = filled.plans()==null ? List.<AiPlanResponse.Plan>of()
+                        : filled.plans().stream().map(p -> {
+                    var steps = p.steps()==null ? List.<AiPlanResponse.Step>of()
+                            : p.steps().stream().filter(st -> st.id()==null || !ex.contains(st.id())).toList();
+                    return new AiPlanResponse.Plan(p.totalTravelMinutes(), p.explain(), steps);
+                }).toList();
+                filled = new AiPlanResponse(singles, plans);
+            }
+
+            return filled;
         } catch (Exception e) {
             throw new IllegalStateException("AI 플래너 호출/파싱 실패", e);
         }
@@ -216,8 +250,21 @@ public class AiPlanner {
     private AiPlanResponse.Step fillStep(AiPlanResponse.Step s, java.util.Map<String, IdeaItem> byId) {
         if (s == null) return null;
         var base = (s.id()!=null) ? byId.get(s.id()) : null;
+
         if (base == null) {
-            // id가 없으면 그대로 두되, mapLink라도 만들어 줌
+            // 후보(byId)에 없으면: id 디코드해서 보강
+            String[] parts = (s.id()!=null) ? parseIdeaId(s.id()) : null;
+            if (parts != null) {
+                String name = nvl(s.name(), parts[0]);
+                double lat  = (s.lat()!=0 ? s.lat() : Double.parseDouble(parts[1]));
+                double lng  = (s.lng()!=0 ? s.lng() : Double.parseDouble(parts[2]));
+                String map  = (s.mapLink()!=null && !s.mapLink().isBlank()) ? s.mapLink() : kakaoToLink(name, lat, lng);
+                return new AiPlanResponse.Step(
+                        s.id(), nvl(s.role(), "activity"), name, nvl(s.address(), ""),
+                        lat, lng, s.externalUrl(), map, s.rating(), s.ratingCount()
+                );
+            }
+            // 최후 폴백: 링크만이라도 생성
             if (s.mapLink()==null || s.mapLink().isBlank()) {
                 String link = kakaoToLink(nvl(s.name(), "장소"), s.lat(), s.lng());
                 return new AiPlanResponse.Step(s.id(), s.role(), s.name(), s.address(),
@@ -225,7 +272,8 @@ public class AiPlanner {
             }
             return s;
         }
-        // base로 보강
+
+        // 기존 backfill 경로 (후보 정보로 보강)
         String name = nvl(s.name(), base.name());
         double lat  = (s.lat()!=0 ? s.lat() : base.lat());
         double lng  = (s.lng()!=0 ? s.lng() : base.lng());
@@ -249,5 +297,6 @@ public class AiPlanner {
         if (a instanceof String sa) return (sa!=null && !sa.isBlank()) ? a : b;
         return a!=null ? a : b;
     }
+
 }
 

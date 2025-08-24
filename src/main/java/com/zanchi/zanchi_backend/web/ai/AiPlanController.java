@@ -30,16 +30,15 @@ public class AiPlanController {
      */
     @PostMapping("/plan")
     public ResponseEntity<AiPlanResponse> plan(@RequestBody PlanRequest req) {
-        // 방어코드: null 리스트를 빈 리스트로
         List<CandidateDto> restaurants = nz(req.getRestaurants());
         List<CandidateDto> mid         = nz(req.getMid());
         List<CandidateDto> finals      = nz(req.getFinals());
 
-        // DTO -> IdeaItem 변환 (mapLink는 카카오 to 링크로 생성)
         List<IdeaItem> ideaRestaurants = restaurants.stream().map(this::toIdea).toList();
         List<IdeaItem> ideaMids        = mid.stream().map(this::toIdea).toList();
         List<IdeaItem> ideaFinals      = finals.stream().map(this::toIdea).toList();
 
+        // ✅ tags / excludeIds / seed까지 넘김
         AiPlanResponse ai = aiPlanner.planTwoRoutes(
                 req.getCompanion(),
                 req.getMobility(),
@@ -51,7 +50,10 @@ public class AiPlanController {
                 req.getWhat(),
                 ideaRestaurants,
                 ideaMids,
-                ideaFinals
+                ideaFinals,
+                nz(req.getTags()),
+                nz(req.getExcludeIds()),
+                req.getSeed()
         );
 
         return ResponseEntity.ok(ai);
@@ -99,21 +101,26 @@ public class AiPlanController {
     @Data
     public static class PlanRequest {
         // 컨텍스트
-        private String companion;  // 예: 연인/친구/혼자/가족
-        private String mobility;   // 예: 도보/대중교통/차
+        private String companion;
+        private String mobility;
         private String startName;
         private double startLat;
         private double startLng;
 
         // 선호
-        private String cuisine;    // 예: 양식/한식/중식...
-        private String finish;     // 예: 술집/카페/디저트/볼링/산책
-        private String what;       // 예: 볼거리/놀거리/쉼자리/먹을거리
+        private String cuisine;
+        private String finish;
+        private String what;
 
         // 후보들
         private List<CandidateDto> restaurants;
         private List<CandidateDto> mid;
         private List<CandidateDto> finals;
+
+        // ▼ 새 필드
+        private List<String> tags;        // 선택 태그(최대 4)
+        private String seed;              // 리롤 시드
+        private List<String> excludeIds;  // 직전 루트에서 쓴 장소 id
     }
 
     /** 후보 아이템 DTO (프론트에서 보내주는 형태) */
