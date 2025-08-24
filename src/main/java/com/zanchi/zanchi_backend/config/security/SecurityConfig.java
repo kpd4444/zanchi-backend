@@ -54,7 +54,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/", "/index.html", "/signup.html", "/login.html", "/members.html",
                                 "/reservation-test.html",
-                                "/tags-test.html"
+                                "/tags-test.html","/show.html"
                         ).permitAll()
 
                         // 로그인/가입 등 공개 API
