@@ -14,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List; // ← 추가
 
 public interface ClipRepository extends JpaRepository<Clip, Long> {
 
@@ -33,6 +34,16 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
 
     @EntityGraph(attributePaths = {"uploader"})
     Page<Clip> findAllByOrderByIdDesc(Pageable pageable);
+
+    // ====== [추가] 최신 업로드 정렬 (createdAt 기준) ======
+    @EntityGraph(attributePaths = {"uploader"})
+    Page<Clip> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    // ====== [추가] 최신 업로드 정렬 + 특정 id 제외 ======
+    // 주의: excludes가 비어있으면 NotIn이 빈 리스트로 번역돼 오류가 날 수 있으니
+    //       호출 측에서 excludes 비어있을 땐 findAllByOrderByCreatedAtDesc를 사용하세요.
+    @EntityGraph(attributePaths = {"uploader"})
+    Page<Clip> findByIdNotInOrderByCreatedAtDesc(List<Long> excludes, Pageable pageable);
 
     @Query(
             value = """
