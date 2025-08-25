@@ -75,24 +75,32 @@ public class AiPlanner {
             List<IdeaItem> mids,
             List<IdeaItem> finals
     ) throws Exception {
-        Map<String, Object> context = Map.of(
-                "start", Map.of(
-                        "name", startName,
-                        "lat", startLat,
-                        "lng", startLng,
-                        "mapLink", kakaoToLink(startName, startLat, startLng)
-                ),
-                "mobility", mobility,
-                "cuisine", cuisine,
-                "finish", finish,
-                "companion", companion,
-                "what", what
-        );
-        Map<String, Object> candidates = Map.of(
-                "restaurants", restaurants,
-                "mid", mids == null ? List.of() : mids,
-                "finals", finals == null ? List.of() : finals
-        );
+        boolean hasRestaurants = restaurants != null && !restaurants.isEmpty();
+
+        var context = new java.util.LinkedHashMap<String, Object>();
+        context.put("start", Map.of(
+                "name", startName,
+                "lat", startLat,
+                "lng", startLng,
+                "mapLink", kakaoToLink(startName, startLat, startLng)
+        ));
+        context.put("mobility", mobility);
+        context.put("finish", finish);
+        context.put("companion", companion);
+        context.put("what", what);
+
+        // 🍱 레스토랑 후보가 있을 때만 cuisine 포함
+        if (hasRestaurants) {
+            String cuisineSafe = (cuisine == null || cuisine.isBlank())
+                    ? "맛집 OR 식당" : cuisine;
+            context.put("cuisine", cuisineSafe);
+        }
+
+        var candidates = new java.util.LinkedHashMap<String, Object>();
+        candidates.put("restaurants", restaurants != null ? restaurants : List.of());
+        candidates.put("mid", mids != null ? mids : List.of());
+        candidates.put("finals", finals != null ? finals : List.of());
+
         return om.writeValueAsString(Map.of("context", context, "candidates", candidates));
     }
 
@@ -130,46 +138,62 @@ public class AiPlanner {
             List<IdeaItem> restaurants, List<IdeaItem> mid, List<IdeaItem> finals,
             List<String> tags, List<String> excludeIds, String seed
     ) {
+        // 레스토랑 후보가 없으면 cuisine을 아예 보내지 않고, 결과에서도 restaurant를 제거
+        final boolean hasRestaurants = restaurants != null && !restaurants.isEmpty();
+
         String system = """
 너는 데이트 코스 플래너다. 반드시 JSON만 출력.
-스키마: {"singles":[{...}], "plans":[{"totalTravelMinutes":0,"explain":"","steps":[{...}]},{...}]}
+스키마: {"singles":[{...}], "plans":[{"totalTravelMinutes":0,"explain":"","steps":[{...}]}]}
 규칙:
   - 후보(candidates.*)만 사용하고, 새 장소를 만들지 않는다.
   - 장소는 반드시 후보의 'id'로 참조한다. steps[].id는 필수.
   - singles는 후보 중에서 5~6개 (역할 다양화).
-  - plans는 2개, 이동수단(context.mobility)에 맞게 동선을 최적화:
+  - plans는 1개, 이동수단(context.mobility)에 맞게 동선을 최적화:
       * 도보/자전거: 이동거리를 짧게, 근거리 위주.
       * 대중교통/차: 중·장거리도 허용, 하지만 전체 이동시간은 합리적 수준.
   - finish 선호(context.finish)는 최소 1코스에 강반영.
   - step.mapLink는 "https://map.kakao.com/link/to/{URLEncoded name},{lat},{lng}" 형식.
+  - candidates.restaurants가 비어있으면 'restaurant' 역할을 steps/singles에 포함하지 말 것.
 """;
 
         try {
-            Map<String, Object> payload = Map.of(
-                    "context", Map.of(
-                            "start", Map.of(
-                                    "name", startName, "lat", startLat, "lng", startLng,
-                                    "mapLink", kakaoToLink(startName, startLat, startLng)
-                            ),
-                            "mobility", mobility, "cuisine", cuisine,
-                            "finish", finish, "companion", companion, "what", what,
-                            "tags", tags == null ? List.of() : tags,
-                            "seed", seed == null ? "" : seed,
-                            "excludeIds", excludeIds == null ? List.of() : excludeIds
-                    ),
-                    "candidates", Map.of(
-                            "restaurants", restaurants != null ? restaurants : List.of(),
-                            "mid",          mid != null ? mid : List.of(),
-                            "finals",       finals != null ? finals : List.of()
-                    )
-            );
+            // ------- payload(context/candidates) 구성: cuisine은 레스토랑 후보 있을 때만 포함 -------
+            var context = new java.util.LinkedHashMap<String, Object>();
+            context.put("start", Map.of(
+                    "name", startName,
+                    "lat", startLat,
+                    "lng", startLng,
+                    "mapLink", kakaoToLink(startName, startLat, startLng)
+            ));
+            context.put("mobility", mobility);
+            context.put("finish", finish);
+            context.put("companion", companion);
+            context.put("what", what);
+            context.put("tags", (tags == null) ? List.of() : tags);
+            context.put("seed", (seed == null) ? "" : seed);
+            context.put("excludeIds", (excludeIds == null) ? List.of() : excludeIds);
 
-            String user = "입력:\n" + om.writeValueAsString(payload) + """
+            if (hasRestaurants) {
+                String cuisineSafe = (cuisine == null || cuisine.isBlank())
+                        ? "맛집 OR 식당" : cuisine;
+                context.put("cuisine", cuisineSafe);
+            }
+
+            var candidates = new java.util.LinkedHashMap<String, Object>();
+            candidates.put("restaurants", restaurants != null ? restaurants : List.of());
+            candidates.put("mid",          mid != null ? mid : List.of());
+            candidates.put("finals",       finals != null ? finals : List.of());
+
+            String user = "입력:\n" + om.writeValueAsString(Map.of(
+                    "context", context,
+                    "candidates", candidates
+            )) + """
                 
                 작업:
                 - candidates.mid/restaurants/finals 중에서 'id'로만 선택한다.
                 - excludeIds 목록의 id는 절대 사용하지 않는다(steps/singles 모두).
                 - steps[].id 반드시 포함. name/address/lat/lng는 비어도 무방.
+                - candidates.restaurants가 비어있으면 'restaurant' 역할을 steps/singles에 포함하지 말 것.
                 - explain은 한국어 2~3문장.
                 출력: JSON만.
                 """;
@@ -179,18 +203,39 @@ public class AiPlanner {
 
             AiPlanResponse parsed = om.readValue(json, AiPlanResponse.class);
 
-            // 후보로 백필
+            // 후보정보로 백필 (id 기준으로 name/좌표/링크 등 보강)
             AiPlanResponse filled = backfillById(parsed, restaurants, mid, finals);
 
-            // 안전장치: excludeIds 필터링
+            // ------- 사후 안전장치 1: excludeIds 제거 -------
             if (excludeIds != null && !excludeIds.isEmpty()) {
                 var ex = new java.util.HashSet<>(excludeIds);
-                var singles = filled.singles()==null ? List.<IdeaItem>of()
-                        : filled.singles().stream().filter(s -> s.id()==null || !ex.contains(s.id())).toList();
-                var plans = filled.plans()==null ? List.<AiPlanResponse.Plan>of()
+                var singles = (filled.singles() == null) ? List.<IdeaItem>of()
+                        : filled.singles().stream()
+                        .filter(s -> s.id() == null || !ex.contains(s.id()))
+                        .toList();
+                var plans = (filled.plans() == null) ? List.<AiPlanResponse.Plan>of()
                         : filled.plans().stream().map(p -> {
-                    var steps = p.steps()==null ? List.<AiPlanResponse.Step>of()
-                            : p.steps().stream().filter(st -> st.id()==null || !ex.contains(st.id())).toList();
+                    var steps = (p.steps() == null) ? List.<AiPlanResponse.Step>of()
+                            : p.steps().stream()
+                            .filter(st -> st.id() == null || !ex.contains(st.id()))
+                            .toList();
+                    return new AiPlanResponse.Plan(p.totalTravelMinutes(), p.explain(), steps);
+                }).toList();
+                filled = new AiPlanResponse(singles, plans);
+            }
+
+            // ------- 사후 안전장치 2: 레스토랑 후보가 비었으면 'restaurant' 역할 제거 -------
+            if (!hasRestaurants) {
+                var singles = (filled.singles() == null) ? List.<IdeaItem>of()
+                        : filled.singles().stream()
+                        .filter(s -> !"restaurant".equals(s.role()))
+                        .toList();
+                var plans = (filled.plans() == null) ? List.<AiPlanResponse.Plan>of()
+                        : filled.plans().stream().map(p -> {
+                    var steps = (p.steps() == null) ? List.<AiPlanResponse.Step>of()
+                            : p.steps().stream()
+                            .filter(st -> !"restaurant".equals(st.role()))
+                            .toList();
                     return new AiPlanResponse.Plan(p.totalTravelMinutes(), p.explain(), steps);
                 }).toList();
                 filled = new AiPlanResponse(singles, plans);
@@ -201,6 +246,8 @@ public class AiPlanner {
             throw new IllegalStateException("AI 플래너 호출/파싱 실패", e);
         }
     }
+
+
 
     private AiPlanResponse backfillById(
             AiPlanResponse raw,
@@ -292,6 +339,8 @@ public class AiPlanner {
                 s.ratingCount()!=null ? s.ratingCount() : base.ratingCount()
         );
     }
+
+
 
     private static <T> T nvl(T a, T b){
         if (a instanceof String sa) return (sa!=null && !sa.isBlank()) ? a : b;
