@@ -1,5 +1,6 @@
-package com.zanchi.zanchi_backend.reco; // 패키지는 프로젝트 규칙에 맞게 조정
+package com.zanchi.zanchi_backend.reco.repository; // 패키지는 프로젝트 규칙에 맞게 조정
 
+import com.zanchi.zanchi_backend.reco.PersonalizeItemMap;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Collection;

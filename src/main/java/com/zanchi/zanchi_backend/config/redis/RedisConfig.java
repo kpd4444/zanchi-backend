@@ -24,14 +24,6 @@ public class RedisConfig {
      * - 기본값(default)으로 localhost:6379, password는 없음("") 처리합니다.
      *   => 로컬 개발 환경에서 Docker로 redis를 띄운 경우 기본값만으로도 접속 가능.
      *   => 배포/운영 환경에서는 반드시 실제 호스트/포트/패스워드를 설정하세요.
-     *
-     * 예) application.yml
-     * spring:
-     *   data:
-     *     redis:
-     *       host: 127.0.0.1
-     *       port: 6379
-     *       password: yourStrongPassword   # 운영에서 requirepass 사용 시
      */
     @Value("${spring.data.redis.host:localhost}")
     private String host;

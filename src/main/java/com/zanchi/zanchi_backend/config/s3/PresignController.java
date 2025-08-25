@@ -1,6 +1,5 @@
 package com.zanchi.zanchi_backend.config.s3;
 
-import com.zanchi.zanchi_backend.config.s3.PresignService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;

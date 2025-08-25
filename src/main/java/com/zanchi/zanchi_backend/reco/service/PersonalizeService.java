@@ -1,4 +1,4 @@
-package com.zanchi.zanchi_backend.reco;
+package com.zanchi.zanchi_backend.reco.service;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.dto.ClipFeedRes;

@@ -1,4 +1,4 @@
-package com.zanchi.zanchi_backend.reco;
+package com.zanchi.zanchi_backend.reco.service;
 
 import com.zanchi.zanchi_backend.domain.clip.Clip;
 import com.zanchi.zanchi_backend.domain.clip.dto.ClipFeedRes;
@@ -6,6 +6,8 @@ import com.zanchi.zanchi_backend.domain.clip.repository.ClipLikeRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipRepository;
 import com.zanchi.zanchi_backend.domain.clip.repository.ClipSaveRepository;
 import com.zanchi.zanchi_backend.domain.member.MemberRepository;
+import com.zanchi.zanchi_backend.reco.PersonalizeItemMap;
+import com.zanchi.zanchi_backend.reco.repository.PersonalizeItemMapRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

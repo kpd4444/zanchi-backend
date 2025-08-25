@@ -57,27 +57,20 @@ public class ClipController {
 
     // 2) 피드 (페이지네이션)
     @GetMapping("/api/clips/feed")
-    public ResponseEntity<Page<ClipFeedRes>> feed(
-            @AuthenticationPrincipal(expression = "member.id") Long meId,
+    public ResponseEntity<Slice<ClipFeedRes>> feed(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "3") int size) {
 
-        Page<Clip> p = clipService.feed(PageRequest.of(page, size));
-        var clipIds = p.getContent().stream().map(Clip::getId).toList();
-
-        Set<Long> likedSet = (meId != null && !clipIds.isEmpty())
-                ? new HashSet<>(clipLikeRepository.findLikedClipIds(meId, clipIds))
-                : Set.of();
-
-        Set<Long> savedSet = (meId != null && !clipIds.isEmpty())
-                ? new HashSet<>(clipSaveRepository.findSavedClipIds(meId, clipIds))
-                : Set.of();
-
-        Page<ClipFeedRes> mapped = p.map(c ->
-                ClipFeedRes.of(c,
-                        likedSet.contains(c.getId()),
-                        savedSet.contains(c.getId()))
+        var pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(size, 1), 3), // 최대 3개
+                Sort.by("createdAt").descending().and(Sort.by("id").descending())
         );
+
+        Slice<Clip> slice = clipService.feedSlice(pageable);
+
+        // Slice 타입이면 map 사용 가능
+        Slice<ClipFeedRes> mapped = slice.map(ClipFeedRes::of);
         return ResponseEntity.ok(mapped);
     }
 

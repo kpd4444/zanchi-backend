@@ -9,13 +9,14 @@ import com.zanchi.zanchi_backend.domain.notification.event.LikeCreatedEvent;
 import com.zanchi.zanchi_backend.domain.notification.event.CommentCreatedEvent;
 import com.zanchi.zanchi_backend.domain.notification.event.MentionCreatedEvent;
 import com.zanchi.zanchi_backend.domain.notification.event.ReplyCreatedEvent;
-import com.zanchi.zanchi_backend.reco.PersonalizeCatalogService;
+import com.zanchi.zanchi_backend.reco.service.PersonalizeCatalogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +29,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
@@ -491,6 +490,11 @@ public class ClipService {
         }
 
         return saved;
+    }
+
+    public Slice<Clip> feedSlice(Pageable pageable) {
+        return clipRepository.findAllByOrderByCreatedAtDescIdDesc(pageable);
+        // 또는 return clipRepository.findFeed(pageable);
     }
 
 }

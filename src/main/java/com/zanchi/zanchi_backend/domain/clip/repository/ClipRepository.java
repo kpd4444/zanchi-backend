@@ -6,6 +6,7 @@ import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankItem;
 import com.zanchi.zanchi_backend.domain.ranking.dto.ClipRankView;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -195,4 +196,15 @@ public interface ClipRepository extends JpaRepository<Clip, Long> {
     Page<ClipSummary> findFollowingClips(@Param("userId") Long userId,
                                          @Param("q") String q,
                                          Pageable pageable);
+
+    @Query("select c.id from Clip c where c.id in :ids")
+    List<Long> findExistingIds(@Param("ids") List<Long> ids);
+
+    // A. 메서드 이름 유도식
+    Slice<Clip> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
+
+    // B. JPQL 직접 작성
+    @Query("select c from Clip c order by c.createdAt desc, c.id desc")
+    Slice<Clip> findFeed(Pageable pageable);
+
 }
