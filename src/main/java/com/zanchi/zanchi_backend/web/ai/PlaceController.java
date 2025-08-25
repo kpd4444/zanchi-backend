@@ -58,7 +58,7 @@ public class PlaceController {
         int reqSize   = Math.max(1, Math.min(size, 15));
         int reqRadius = Math.max(1, Math.min(radius, 20000));
 
-        KakaoResp resp = kakaoClient.get()
+        Mono<KakaoResp> mono = kakaoClient.get()
                 .uri(uri -> {
                     var b = uri.path("/v2/local/search/keyword.json")
                             .queryParam("query", term)
@@ -72,16 +72,58 @@ public class PlaceController {
                 })
                 .retrieve()
                 .bodyToMono(KakaoResp.class)
-                .block(java.time.Duration.ofSeconds(5));
+                // Netty(8s)보다 살짝 짧게 걸어 우리가 먼저 제어
+                .timeout(java.time.Duration.ofSeconds(7))
+                // 타임아웃/네트워크/역직렬화/HTTP 오류 → 빈 결과로 폴백
+                .onErrorResume(ex -> Mono.just(new KakaoResp(java.util.List.of())));
 
-        if (resp == null || resp.documents == null) return List.of();
+        KakaoResp resp;
+        try {
+            // 체인에서 이미 timeout/fallback 했으므로 block()에 시간 제한 불필요
+            resp = mono.block();
+        } catch (Exception e) {
+            // 최후 방어: 어떤 예외든 빈 리스트 반환
+            return java.util.List.of();
+        }
 
-        // ✅ 여기서 “필수값 보장 + 불량건 제외”
-        return resp.documents.stream()
-                .map(this::mapKakaoDocSafely)     // Optional<PlaceDto>
-                .flatMap(Optional::stream)        // 유효한 것만
-                .collect(Collectors.toList());
+        if (resp == null || resp.documents == null) return java.util.List.of();
+
+        return resp.documents.stream().map(d ->
+                PlaceDto.builder()
+                        .name(nz(d.place_name, "?"))
+                        .address(nz(d.road_address_name, d.address_name))
+                        .lat(parseD(d.y))   // Kakao: y=lat
+                        .lng(parseD(d.x))   // Kakao: x=lng
+                        .externalUrl(d.place_url)
+                        .rating(null)
+                        .ratingCount(null)
+                        .category(d.category_name)
+                        .build()
+        ).collect(java.util.stream.Collectors.toList());
     }
+
+    private static double parseD(Object v) {
+        if (v == null) return 0.0;
+        try {
+            if (v instanceof Number n) return n.doubleValue();
+            String s = v.toString().trim();
+            if (s.isEmpty()) return 0.0;
+            return Double.parseDouble(s);
+        } catch (Exception ignore) {
+            return 0.0;
+        }
+    }
+
+    // a가 비어있으면 b로 대체 (b도 null이면 빈 문자열)
+    private static String nz(String a, String b) {
+        return (a != null && !a.isBlank()) ? a : (b != null ? b : "");
+    }
+
+    // 필요하면 단항 버전도 추가
+    private static String nz(String a) {
+        return a != null ? a : "";
+    }
+
 
     /** 좌표 없거나 파싱 실패 → 제외, 나머지는 안전한 기본값으로 채움 */
     private Optional<PlaceDto> mapKakaoDocSafely(KakaoDoc d) {
