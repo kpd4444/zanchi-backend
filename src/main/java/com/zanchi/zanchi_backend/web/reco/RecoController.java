@@ -25,7 +25,9 @@ public class RecoController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        String loginId = auth.getName(); // JwtAuthenticationFilter 가 세팅
-        return ResponseEntity.ok(recoService.getMyFeed(loginId, page, size));
+        if (auth == null) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(recoService.getMyFeed(auth.getName(), page, size));
     }
 }

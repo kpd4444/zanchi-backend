@@ -24,6 +24,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.util.StringUtils;
+import software.amazon.awssdk.services.personalizeruntime.model.PersonalizeRuntimeException;
 
 @Slf4j
 @Service
