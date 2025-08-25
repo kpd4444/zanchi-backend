@@ -11,7 +11,11 @@ import com.zanchi.zanchi_backend.reco.repository.PersonalizeItemMapRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -37,7 +41,7 @@ public class RecoService {
     private final ClipRepository clipRepository;
     private final ClipLikeRepository clipLikeRepository;
     private final ClipSaveRepository clipSaveRepository;
-    private final PersonalizeItemMapRepository itemMapRepository; // ★ 추가
+    private final PersonalizeItemMapRepository itemMapRepository;
 
     @Value("${reco.personalize.campaign-arn:}")
     private String campaignArn;
@@ -56,11 +60,11 @@ public class RecoService {
 
         // 기능 토글: 비활성화면 곧장 폴백
         if (!personalizeEnabled) {
-            log.warn("Personalize disabled by config. Falling back to trending.");
+            log.warn("[reco] disabled by config -> trending fallback");
             return trendingFeed(pageable, userId);
         }
         if (!StringUtils.hasText(campaignArn)) {
-            log.error("reco.personalize.campaign-arn 설정이 비어있습니다. Falling back to trending.");
+            log.error("[reco] empty campaignArn -> trending fallback");
             return trendingFeed(pageable, userId);
         }
 
@@ -76,20 +80,18 @@ public class RecoService {
             );
 
             List<String> itemIds = resp.itemList().stream().map(PredictedItem::itemId).toList();
-            log.info("Personalize itemIds userId={} count={} sample(<=20)={}",
+            log.info("[reco] raw itemIds userId={} count={} sample(<=20)={}",
                     userId, itemIds.size(), itemIds.stream().limit(20).toList());
 
             if (itemIds.isEmpty()) {
-                log.warn("Personalize returned empty list. Falling back to trending.");
+                log.warn("[reco] Personalize returned empty -> trending fallback");
                 return trendingFeed(pageable, userId);
             }
 
-            // 1) 숫자 파싱 + 2) 매핑테이블 조회 (원본 순서 보존)
-            //    - 순서를 지키기 위해 itemIds를 순회하며 clipId를 결정
+            // 1) 숫자/clip_123 파싱 + 2) 매핑 테이블 조회 (원본 순서 보존)
             Map<String, Long> tableMap = Map.of();
             List<String> unmapped = new ArrayList<>();
 
-            // 1차: 숫자 파싱 시도
             List<Long> clipIdsOrdered = new ArrayList<>(itemIds.size());
             for (String iid : itemIds) {
                 Optional<Long> parsed = parseClipId(iid);
@@ -100,45 +102,52 @@ public class RecoService {
                 }
             }
 
-            // 2차: 테이블 매핑 (있을 때만 조회)
             if (!unmapped.isEmpty()) {
                 var rows = itemMapRepository.findByItemIdIn(unmapped);
                 if (!rows.isEmpty()) {
-                    tableMap = rows.stream().collect(Collectors.toMap(PersonalizeItemMap::getItemId, PersonalizeItemMap::getClipId));
+                    tableMap = rows.stream()
+                            .collect(Collectors.toMap(PersonalizeItemMap::getItemId, PersonalizeItemMap::getClipId));
                 }
             }
 
             if (!tableMap.isEmpty()) {
-                // 원본 순서를 유지하며 남은 itemId를 테이블 매핑으로 보충
                 for (String iid : itemIds) {
                     if (clipIdsOrdered.size() >= itemIds.size()) break;
-                    if (tableMap.containsKey(iid)) {
-                        clipIdsOrdered.add(tableMap.get(iid));
-                    }
+                    Long cid = tableMap.get(iid);
+                    if (cid != null) clipIdsOrdered.add(cid);
                 }
             }
 
-            // 중복 제거 (앞쪽 우선순위 유지)
-            LinkedHashSet<Long> dedup = new LinkedHashSet<>(clipIdsOrdered);
-            clipIdsOrdered = new ArrayList<>(dedup);
-
+            // ===== [추가] DB 존재 검증 + 중복 제거 (앞쪽 우선) =====
             if (clipIdsOrdered.isEmpty()) {
-                log.warn("추천 결과에 매핑 가능한 Clip ID가 없습니다. rawItemIds={}", itemIds);
+                log.warn("[reco] mappedClipIds empty -> trending fallback; rawItemIds={}", itemIds);
+                return trendingFeed(pageable, userId);
+            }
+
+            List<Long> existingIds = clipRepository.findExistingIds(clipIdsOrdered);
+            Set<Long> existingSet = new HashSet<>(existingIds);
+
+            LinkedHashSet<Long> dedupOrdered = new LinkedHashSet<>();
+            for (Long id : clipIdsOrdered) {
+                if (existingSet.contains(id)) dedupOrdered.add(id);
+            }
+
+            List<Long> orderedClipIds = new ArrayList<>(dedupOrdered);
+            if (orderedClipIds.isEmpty()) {
+                log.warn("[reco] after existence check, no IDs -> trending fallback; rawItemIds={}", itemIds);
                 return trendingFeed(pageable, userId);
             }
 
             // DB 조회 후 추천 순서 유지
-            Map<Long, Clip> byId = clipRepository.findAllById(clipIdsOrdered).stream()
+            Map<Long, Clip> byId = clipRepository.findAllById(orderedClipIds).stream()
                     .collect(Collectors.toMap(Clip::getId, c -> c));
-
-            List<Clip> ordered = clipIdsOrdered.stream()
+            List<Clip> ordered = orderedClipIds.stream()
                     .map(byId::get)
                     .filter(Objects::nonNull)
                     .toList();
 
-            // 추천이 전부 DB에 없으면 폴백
             if (ordered.isEmpty()) {
-                log.warn("Mapped IDs not found in DB. rawItemIds={}", itemIds);
+                log.warn("[reco] ordered clips empty after DB fetch -> trending fallback; rawItemIds={}", itemIds);
                 return trendingFeed(pageable, userId);
             }
 
@@ -147,12 +156,19 @@ public class RecoService {
             int to = Math.min(from + size, ordered.size());
             List<Clip> pageList = new ArrayList<>(ordered.subList(from, to));
 
-            // 추천으로 채운 수가 부족하면 폴백으로 보강 (중복 제외)
+            // ===== [강화] 보강 시, 추천 전체 + 현재 페이지를 exclude로 묶어 중복 방지 =====
             if (pageList.size() < size) {
                 int need = size - pageList.size();
-                log.info("Fill with fallback: need={}", need);
-                List<Long> excludes = pageList.stream().map(Clip::getId).toList();
-                pageList.addAll(trendingFill(excludes, need));
+                Set<Long> exclude = new HashSet<>(orderedClipIds);
+                exclude.addAll(pageList.stream().map(Clip::getId).toList());
+                log.info("[reco] fallback fill need={}, exclude(size)={}", need, exclude.size());
+                pageList.addAll(trendingFill(new ArrayList<>(exclude), need));
+            }
+
+            // ===== [안전망] 그래도 비면 하드 폴백 =====
+            if (pageList.isEmpty()) {
+                log.error("[reco] pageList empty even after fill -> hard trending fallback");
+                return trendingFeed(pageable, userId);
             }
 
             // 나의 좋아요/저장 표시
@@ -166,16 +182,17 @@ public class RecoService {
                     .map(c -> ClipFeedRes.of(c, liked.contains(c.getId()), saved.contains(c.getId())))
                     .toList();
 
-            return new PageImpl<>(res, pageable, Math.max(ordered.size(), page * size + res.size()));
+            long total = Math.max(ordered.size(), (long) (page * size + res.size()));
+            return new PageImpl<>(res, pageable, total);
 
         } catch (PersonalizeRuntimeException e) {
             String msg = (e.awsErrorDetails() != null && e.awsErrorDetails().errorMessage() != null)
                     ? e.awsErrorDetails().errorMessage()
                     : e.getMessage();
-            log.error("Personalize GetRecommendations 실패: {}", msg, e);
+            log.error("[reco] GetRecommendations failed: {}", msg, e);
             return trendingFeed(pageable, userId); // 장애 시 폴백
         } catch (Exception e) {
-            log.error("추천 피드 처리 중 예외: {}", e.getMessage(), e);
+            log.error("[reco] exception: {}", e.getMessage(), e);
             return trendingFeed(pageable, userId); // 예외 시 폴백
         }
     }
@@ -202,7 +219,8 @@ public class RecoService {
 
     /** 보강용 폴백 아이템: 최신 업로드에서 excludes를 제외하고 need만큼 채움 */
     private List<Clip> trendingFill(List<Long> excludes, int need) {
-        int fetch = Math.max(need * 3, need);
+        if (need <= 0) return List.of();
+        int fetch = Math.max(need * 5, need * 3); // 여유 폭 확대
         Page<Clip> recent = clipRepository.findAll(
                 PageRequest.of(0, fetch, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
@@ -240,7 +258,6 @@ public class RecoService {
             catch (NumberFormatException ignore) { return Optional.empty(); }
         }
 
-        // 매핑 불가
         return Optional.empty();
     }
 }
